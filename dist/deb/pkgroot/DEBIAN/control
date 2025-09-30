@@ -1,0 +1,10 @@
+Package: switch-toolkit
+Version: 1.0.0
+Section: utils
+Priority: optional
+Architecture: all
+Depends: bash, coreutils, docker.io | docker-ce | docker
+Maintainer: NiA Pegasus <support@example.com>
+Description: Switch Management Toolkit (Docker-based)
+ A wrapper and desktop entry to build and run the Switch Management Toolkit
+ in a Docker container with host networking.

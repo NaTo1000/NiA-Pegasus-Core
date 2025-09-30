@@ -1,0 +1,1 @@
+Place a 256x256 PNG icon here named switch-toolkit.png to include it in .deb and .rpm packages.
