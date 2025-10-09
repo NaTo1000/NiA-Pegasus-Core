@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Switch Management Toolkit
+Comment=Discover and assess managed switches on your network
+Exec=/usr/local/bin/switch-toolkit
+Terminal=true
+Categories=Network;Utility;
+
