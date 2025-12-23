@@ -37,11 +37,15 @@ try:
     NUMBA_AVAILABLE = True
 except ImportError:
     NUMBA_AVAILABLE = False
-    # Fallback decorator
+    # Fallback decorator that handles both @jit and @jit(...) syntax
     def jit(*args, **kwargs):
         def decorator(func):
             return func
-        return decorator if not args else decorator(args[0])
+        # If called with function directly (@jit), return decorated function
+        if len(args) == 1 and callable(args[0]) and not kwargs:
+            return args[0]
+        # If called with arguments (@jit(...)), return decorator
+        return decorator
     vectorize = jit
 
 try:
@@ -138,7 +142,12 @@ class AsyncConnectionPool:
 
 
 class Connection:
-    """Lightweight connection object"""
+    """
+    Lightweight connection object (MOCK IMPLEMENTATION)
+    
+    WARNING: This is a placeholder implementation for demonstration purposes.
+    In production, replace with actual connection logic to network interfaces.
+    """
     __slots__ = ('_id', '_timestamp', '_data')
     
     def __init__(self):
@@ -521,7 +530,12 @@ class OptimizedWirelessManager:
             await self.connection_pool.release(conn)
     
     async def _send_batch(self, batch: List[bytes], conn: Connection):
-        """Send batch of packets"""
+        """
+        Send batch of packets
+        
+        NOTE: This is a SIMULATED implementation for demonstration and testing.
+        In production, replace with actual network transmission code.
+        """
         # Concatenate all packets
         combined = b''.join(batch)
         
@@ -529,7 +543,8 @@ class OptimizedWirelessManager:
         key = self.crypto.generate_key()
         encrypted = self.crypto.encrypt_fast(combined, key)
         
-        # Simulate sending (would be actual network call)
+        # SIMULATION: In production, replace with actual network send
+        # Example: await websocket.send(encrypted)
         await asyncio.sleep(0.001)  # Simulated network delay
     
     def update_channel_metrics(self, snr_db: float, rssi_dbm: float):
@@ -617,8 +632,9 @@ async def benchmark_wireless_performance():
     print("  ✓ 5x from vectorized crypto")
     print("  ✓ 2x from lock-free queues")
     print("  ✓ 4x from batch processing")
-    print("  = 240x total theoretical improvement")
-    print("  ≈ 10-20x real-world improvement")
+    print("\nNOTE: Theoretical maximum (3×2×5×2×4 = 240x) assumes perfect")
+    print("      stacking of optimizations. Real-world improvements are")
+    print("      typically 10-20x due to Amdahl's Law and bottlenecks.")
     print("=" * 70)
 
 

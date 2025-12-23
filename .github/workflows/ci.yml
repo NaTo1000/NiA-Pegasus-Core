@@ -39,7 +39,9 @@ jobs:
         continue-on-error: true
       
       - name: Run pylint
-        run: pylint **/*.py --exit-zero
+        run: |
+          # Run pylint with minimum acceptable score of 7.0
+          pylint **/*.py --fail-under=7.0 || echo "Pylint score below threshold"
         continue-on-error: true
 
   test:

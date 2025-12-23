@@ -6,6 +6,8 @@ import asyncio
 from typing import Union, List
 from functools import lru_cache
 import time
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from multiprocessing import cpu_count
 
 
 # ============================================================================
@@ -177,9 +179,6 @@ class FastMath:
 # REVISION 9: Parallel Processing - Leverages multiple cores
 # Performance gain: 2-8x depending on core count
 # ============================================================================
-
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
-from multiprocessing import cpu_count
 
 def _add_tuple(t):
     """Helper function for parallel processing (must be picklable)"""
