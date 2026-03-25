@@ -235,9 +235,8 @@ class FastCrypto:
         self.key_size = key_size
         self._key_cache: Dict[bytes, np.ndarray] = {}
     
-    @lru_cache(maxsize=256)
     def generate_key(self, seed: bytes = None) -> bytes:
-        """Generate key with caching"""
+        """Generate key - always produces a fresh random key when seed is None"""
         if seed is None:
             return secrets.token_bytes(self.key_size)
         return hashlib.blake2b(seed, digest_size=self.key_size).digest()
@@ -267,20 +266,22 @@ class FastCrypto:
 
 class LockFreeQueue:
     """
-    Lock-free queue using deque
-    2x faster than queue.Queue for high-throughput scenarios
+    Thread-safe queue using deque with a lock for put operations
+    High-throughput with race-condition protection
     """
     
     def __init__(self, maxsize: int = 10000):
         self._queue = deque(maxlen=maxsize)
         self._maxsize = maxsize
+        self._lock = threading.Lock()
     
     def put(self, item: Any) -> bool:
-        """Non-blocking put"""
-        if len(self._queue) >= self._maxsize:
-            return False
-        self._queue.append(item)
-        return True
+        """Thread-safe non-blocking put"""
+        with self._lock:
+            if len(self._queue) >= self._maxsize:
+                return False
+            self._queue.append(item)
+            return True
     
     def get(self) -> Optional[Any]:
         """Non-blocking get"""

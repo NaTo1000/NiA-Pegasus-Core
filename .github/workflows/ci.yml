@@ -43,6 +43,7 @@ jobs:
       - name: Run pylint
         run: |
           # Run pylint with minimum acceptable score of 7.0
+          shopt -s globstar
           pylint **/*.py --fail-under=7.0 || echo "Pylint score below threshold"
         continue-on-error: true
 
@@ -72,7 +73,6 @@ jobs:
       - name: Run tests with coverage
         run: |
           pytest --cov=. --cov-report=xml --cov-report=html --benchmark-skip
-        continue-on-error: true
       
       - name: Upload coverage reports
         uses: codecov/codecov-action@v4
@@ -102,7 +102,6 @@ jobs:
       
       - name: Run Bandit security scan
         run: bandit -r . -f json -o bandit-report.json
-        continue-on-error: true
       
       - name: Run Safety check
         run: safety check --json
@@ -112,11 +111,9 @@ jobs:
         uses: github/codeql-action/init@v3
         with:
           languages: python
-        continue-on-error: true
       
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
-        continue-on-error: true
 
   build:
     name: Build and Package
@@ -139,7 +136,6 @@ jobs:
       
       - name: Build package
         run: python -m build
-        continue-on-error: true
       
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

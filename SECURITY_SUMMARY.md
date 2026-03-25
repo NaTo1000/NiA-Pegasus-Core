@@ -16,7 +16,7 @@
 
 ### 2. Cryptographic Security
 **Implementation**: 
-- Blake2b hashing (faster and more secure than SHA-256)
+- Blake2b hashing (faster than SHA-256 with comparable security; not a replacement for SHA-3 in all threat models)
 - Constant-time comparison with `hmac.compare_digest`
 - Secure random key generation with `secrets` module
 - No hardcoded secrets or keys
@@ -55,8 +55,8 @@
 ### Low-Risk Areas (Acknowledged)
 1. **Mock Implementations**: Connection and network send are demonstrations
    - Clearly documented as mock/demo implementations
-   - Should be replaced with actual network code in production
-   - No security risk as they don't expose real interfaces
+   - **Must** be replaced with hardened, production-grade network code before deployment
+   - Using mock implementations in production exposes the application to undefined and potentially insecure behaviour
 
 2. **Performance vs Security Trade-offs**: 
    - Caching used for performance (acceptable for non-sensitive data)

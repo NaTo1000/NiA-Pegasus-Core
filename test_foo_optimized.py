@@ -213,8 +213,6 @@ def test_add_safe_with_compatible_types():
 
 def test_cache_effectiveness():
     """Test that LRU cache improves performance"""
-    import time
-    
     # Clear cache
     add.cache_clear()
     multiply.cache_clear()
@@ -304,10 +302,10 @@ def test_benchmark_all_revisions():
     
     # Verify performance improvements
     baseline = results['baseline']
-    for name, time in results.items():
+    for name, elapsed_time in results.items():
         if name != 'baseline':
             # Most optimizations should be faster than baseline
-            print(f"{name}: {baseline/time:.2f}x speedup")
+            print(f"{name}: {baseline/elapsed_time:.2f}x speedup")
 
 
 # ============================================================================
