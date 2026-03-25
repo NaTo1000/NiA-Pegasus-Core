@@ -5,7 +5,6 @@ Performance target: 5x improvement through async patterns
 import asyncio
 from typing import Union, List
 from functools import lru_cache
-import time
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from multiprocessing import cpu_count
 
@@ -159,6 +158,8 @@ class FastMath:
     @staticmethod
     def add_many(*args):
         """Sum multiple values efficiently"""
+        if not args:
+            return 0
         total = args[0]
         for val in args[1:]:
             total += val
@@ -189,6 +190,8 @@ def add_parallel(operations: List[tuple], use_processes=False) -> List:
     Parallel addition using thread or process pool
     Automatically scales to available CPU cores
     """
+    if not operations:
+        return []
     executor_class = ProcessPoolExecutor if use_processes else ThreadPoolExecutor
     workers = min(cpu_count(), len(operations))
     

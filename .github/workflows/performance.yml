@@ -44,5 +44,5 @@ jobs:
       
       - name: Memory profiling
         run: |
-          python -m memory_profiler test_foo.py || echo "Memory profiling completed"
+          python -m memory_profiler test_foo.py
         continue-on-error: true
