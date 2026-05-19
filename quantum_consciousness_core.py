@@ -46,6 +46,13 @@ DECISION_PRESSURE_WEIGHT_SUM = (
     DECISION_PRESSURE_INDECISION_WEIGHT +
     DECISION_PRESSURE_LOW_AGENCY_WEIGHT
 )
+if abs(DECISION_PRESSURE_WEIGHT_SUM - 1.0) > 1e-9:
+    raise ValueError(
+        f"Decision pressure weights invalid: sum={DECISION_PRESSURE_WEIGHT_SUM} "
+        f"(fear={DECISION_PRESSURE_FEAR_WEIGHT}, anger={DECISION_PRESSURE_ANGER_WEIGHT}, "
+        f"anticipation={DECISION_PRESSURE_ANTICIPATION_WEIGHT}, indecision={DECISION_PRESSURE_INDECISION_WEIGHT}, "
+        f"low_agency={DECISION_PRESSURE_LOW_AGENCY_WEIGHT})"
+    )
 
 AFFECT_GRIEF_BASE_WEIGHT = 0.6
 AFFECT_GRIEF_FEAR_WEIGHT = 0.4
@@ -60,6 +67,16 @@ HUMAN_INTENT_IMMEDIATE_PRESSURE_THRESHOLD = 0.65
 HUMAN_INTENT_NEAR_TERM_PRESSURE_THRESHOLD = 0.35
 HUMAN_INTENT_HIGH_INDECISION_THRESHOLD = 0.6
 HUMAN_INTENT_CONSTRAINED_DECISION_PRESSURE_THRESHOLD = 0.55
+HUMAN_INTENT_HIGH_ENVIRONMENTAL_TURBULENCE_THRESHOLD = 0.6
+HUMAN_INTENT_MAX_INTENT_REASONS = 2
+
+BEHAVIOR_SPEECH_BAND_START_RATIO = 5
+BEHAVIOR_SPEECH_BAND_END_RATIO = 2
+BEHAVIOR_THROAT_BAND_START_RATIO = 3
+BEHAVIOR_THROAT_BAND_END_RATIO = 2
+BEHAVIOR_TIC_BURST_PERCENTILE = 90
+BEHAVIOR_IMPULSIVITY_PERCENTILE = 95
+BEHAVIOR_GLANCE_SEGMENT_COUNT = 3
 
 # Q-CTRL Integration
 class QCTRLOptimizer:
@@ -861,7 +878,10 @@ class SyntheticConsciousness:
                     'how': 'undetermined',
                     'micro_signals': {},
                     'decision_state': {},
-                    'affective_landscape': {}
+                    'affective_landscape': {},
+                    'environmental_dynamics': {},
+                    'behavioral_fluidity': {},
+                    'distress_state': {}
                 }
             }
         
@@ -891,11 +911,17 @@ class SyntheticConsciousness:
         micro_signals = self._extract_micro_signal_markers(recent_memories)
         decision_state = self._compute_decision_state(direction, agency)
         affective_landscape = self._compute_affective_landscape(decision_state)
+        environmental_dynamics = self._compute_environmental_dynamics(recent_memories)
+        behavioral_fluidity = self._compute_behavioral_fluidity_markers(recent_memories)
+        distress_state = self._compute_distress_state(decision_state, affective_landscape, behavioral_fluidity)
         human_intent = self._compose_human_intent_logic(
             intentions=intentions,
             micro_signals=micro_signals,
             decision_state=decision_state,
-            affective_landscape=affective_landscape
+            affective_landscape=affective_landscape,
+            environmental_dynamics=environmental_dynamics,
+            behavioral_fluidity=behavioral_fluidity,
+            distress_state=distress_state
         )
         
         return {
@@ -939,7 +965,10 @@ class SyntheticConsciousness:
             temporal_delta = np.diff(stacked, axis=0)
             temporal_jitter = float(np.mean(np.abs(temporal_delta)))
             oscillation = np.diff(temporal_delta, axis=0)
-            stutter_signal = float(np.clip(np.mean(np.abs(oscillation)) / (temporal_jitter + EPSILON), 0.0, 1.0))
+            stutter_signal = float(np.clip(
+                (np.mean(np.abs(oscillation)) + EPSILON) / (temporal_jitter + EPSILON),
+                0.0, 1.0
+            ))
         else:
             temporal_jitter = 0.0
             stutter_signal = 0.0
@@ -957,11 +986,11 @@ class SyntheticConsciousness:
         centered = stacked - np.mean(stacked, axis=1, keepdims=True)
         spectrum = np.abs(np.fft.rfft(centered, axis=1))
         if spectrum.shape[1] > MICRO_SIGNAL_INFANT_BAND_LOWER_RATIO * 2:
-            infant_low = spectrum.shape[1] // MICRO_SIGNAL_INFANT_BAND_LOWER_RATIO
-            infant_high = spectrum.shape[1] // MICRO_SIGNAL_INFANT_BAND_UPPER_RATIO
+            infant_band_start = spectrum.shape[1] // MICRO_SIGNAL_INFANT_BAND_LOWER_RATIO
+            infant_band_end = spectrum.shape[1] // MICRO_SIGNAL_INFANT_BAND_UPPER_RATIO
             low_band_end = max(MICRO_SIGNAL_LOW_BAND_MIN_BINS, spectrum.shape[1] // MICRO_SIGNAL_LOW_BAND_RATIO)
             
-            infant_band = float(np.mean(spectrum[:, infant_low:infant_high]))
+            infant_band = float(np.mean(spectrum[:, infant_band_start:infant_band_end]))
             low_band = float(np.mean(spectrum[:, 1:low_band_end]))
             infant_vocalization_likelihood = float(np.clip(infant_band / (infant_band + low_band + EPSILON), 0.0, 1.0))
         else:
@@ -983,9 +1012,6 @@ class SyntheticConsciousness:
     
     def _compute_decision_state(self, direction: np.ndarray, agency: float) -> Dict[str, float]:
         """Estimate indecision and decision pressure from trajectory and affect"""
-        if abs(DECISION_PRESSURE_WEIGHT_SUM - 1.0) > 1e-9:
-            raise ValueError("Decision pressure weights must sum to 1.0")
-
         commitment = float(np.clip(np.abs(direction).max(), 0.0, 1.0))
         indecision = float(1.0 - commitment)
         
@@ -1041,7 +1067,10 @@ class SyntheticConsciousness:
                                     intentions: List[str],
                                     micro_signals: Dict[str, float],
                                     decision_state: Dict[str, float],
-                                    affective_landscape: Dict[str, float]) -> Dict[str, Any]:
+                                    affective_landscape: Dict[str, float],
+                                    environmental_dynamics: Dict[str, float],
+                                    behavioral_fluidity: Dict[str, float],
+                                    distress_state: Dict[str, float]) -> Dict[str, Any]:
         """Compose the full human-intent frame with who/why/when/how semantics"""
         focus_scores = {
             'infant': micro_signals.get('infant_vocalization_likelihood', 0.0),
@@ -1060,7 +1089,7 @@ class SyntheticConsciousness:
         )
         
         if intentions:
-            why = " + ".join(intentions[:2])
+            why = ", ".join(intentions[:HUMAN_INTENT_MAX_INTENT_REASONS])
         elif affective_landscape.get('grief_of_loss', 0.0) > 0.4:
             why = 'process_loss_and_recover'
         elif affective_landscape.get('joy_of_love', 0.0) > 0.4:
@@ -1070,8 +1099,17 @@ class SyntheticConsciousness:
         
         pressure = decision_state.get('choice_pressure', 0.0)
         indecision = decision_state.get('indecision', 0.0)
+        environmental_turbulence = environmental_dynamics.get('environmental_turbulence', 0.0)
+        fidget_index = behavioral_fluidity.get('overall_fidget_index', 0.0)
+        despair = distress_state.get('desperation_index', 0.0)
         if pressure > HUMAN_INTENT_IMMEDIATE_PRESSURE_THRESHOLD:
             when = 'immediate'
+        elif despair > 0.75:
+            when = 'acute_crisis_window'
+        elif environmental_turbulence > HUMAN_INTENT_HIGH_ENVIRONMENTAL_TURBULENCE_THRESHOLD:
+            when = 'continuous_adaptive'
+        elif fidget_index > 0.6:
+            when = 'micro_reactive'
         elif pressure > HUMAN_INTENT_NEAR_TERM_PRESSURE_THRESHOLD:
             when = 'near_term'
         else:
@@ -1079,6 +1117,10 @@ class SyntheticConsciousness:
         
         if indecision > HUMAN_INTENT_HIGH_INDECISION_THRESHOLD:
             how = 'iterative_reassessment'
+        elif despair > 0.75:
+            how = 'stabilize_and_reduce_overload'
+        elif fidget_index > 0.65:
+            how = 'somatic_regulation_loop'
         elif pressure > HUMAN_INTENT_CONSTRAINED_DECISION_PRESSURE_THRESHOLD:
             how = 'constrained_decision_making'
         else:
@@ -1091,7 +1133,313 @@ class SyntheticConsciousness:
             'how': how,
             'micro_signals': micro_signals,
             'decision_state': decision_state,
-            'affective_landscape': affective_landscape
+            'affective_landscape': affective_landscape,
+            'environmental_dynamics': environmental_dynamics,
+            'behavioral_fluidity': behavioral_fluidity,
+            'distress_state': distress_state
+        }
+    
+    def _compute_environmental_dynamics(self, memories: List[Dict]) -> Dict[str, float]:
+        """Estimate per-moment environmental variability (light/tone/color/wind/wave dynamics)"""
+        if not memories:
+            return {
+                'light_frequency_flux': 0.0,
+                'tone_variability': 0.0,
+                'color_drift': 0.0,
+                'wind_velocity_proxy': 0.0,
+                'wind_swirl_complexity': 0.0,
+                'wave_retreat_crash_cycle': 0.0,
+                'cycle_non_repeatability': 0.0,
+                'solar_warmth_radiation': 0.0,
+                'ocular_brightness_glare': 0.0,
+                'warmth_scent_signature': 0.0,
+                'cool_breeze_hot_sun_contrast': 0.0,
+                'beach_scent_signature': 0.0,
+                'environmental_turbulence': 0.0
+            }
+        
+        sensory_series = []
+        for memory in memories:
+            if isinstance(memory, dict) and memory.get('sensory_data') is not None:
+                sensor_array = np.asarray(memory['sensory_data'], dtype=float).reshape(-1)
+                if sensor_array.size > 0 and np.all(np.isfinite(sensor_array)):
+                    sensory_series.append(sensor_array)
+        
+        if not sensory_series:
+            return {
+                'light_frequency_flux': 0.0,
+                'tone_variability': 0.0,
+                'color_drift': 0.0,
+                'wind_velocity_proxy': 0.0,
+                'wind_swirl_complexity': 0.0,
+                'wave_retreat_crash_cycle': 0.0,
+                'cycle_non_repeatability': 0.0,
+                'solar_warmth_radiation': 0.0,
+                'ocular_brightness_glare': 0.0,
+                'warmth_scent_signature': 0.0,
+                'cool_breeze_hot_sun_contrast': 0.0,
+                'beach_scent_signature': 0.0,
+                'environmental_turbulence': 0.0
+            }
+        
+        stacked = np.vstack(sensory_series)
+        centered = stacked - np.mean(stacked, axis=1, keepdims=True)
+        spectrum = np.abs(np.fft.rfft(centered, axis=1))
+        
+        if spectrum.shape[1] > 2:
+            mid = spectrum.shape[1] // 2
+            low_energy = float(np.mean(spectrum[:, 1:max(2, mid // 2)]))
+            high_energy = float(np.mean(spectrum[:, mid:]))
+            light_frequency_flux = float(np.clip(high_energy / (high_energy + low_energy + EPSILON), 0.0, 1.0))
+            tone_variability = float(np.clip(np.std(spectrum[:, 1:]) / (np.mean(spectrum[:, 1:]) + EPSILON), 0.0, 1.0))
+        else:
+            light_frequency_flux = 0.0
+            tone_variability = 0.0
+        
+        if stacked.shape[1] >= 3:
+            color_bins = np.array_split(stacked, 3, axis=1)
+            color_means = np.stack([np.mean(bin_data, axis=1) for bin_data in color_bins], axis=1)
+            color_drift = float(np.clip(np.mean(np.abs(np.diff(color_means, axis=0))), 0.0, 1.0))
+        else:
+            color_drift = 0.0
+        
+        temporal_gradient = np.diff(stacked, axis=0) if stacked.shape[0] > 1 else np.zeros_like(stacked)
+        wind_velocity_proxy = float(np.clip(np.mean(np.abs(temporal_gradient)), 0.0, 1.0))
+        
+        solar_warmth_radiation = float(np.clip(np.mean(np.maximum(stacked, 0.0)), 0.0, 1.0))
+        if spectrum.shape[1] > 3:
+            high_band = spectrum[:, (spectrum.shape[1] * 2) // 3:]
+            ocular_brightness_glare = float(np.clip(
+                np.mean(high_band) / (np.mean(spectrum[:, 1:]) + EPSILON), 0.0, 1.0
+            ))
+        else:
+            ocular_brightness_glare = 0.0
+        
+        if stacked.shape[1] >= 3:
+            thirds = np.array_split(stacked, 3, axis=1)
+            low_channel = np.mean(np.abs(thirds[0]))
+            mid_channel = np.mean(np.abs(thirds[1]))
+            high_channel = np.mean(np.abs(thirds[2]))
+            warmth_scent_signature = float(np.clip((low_channel + mid_channel) / (low_channel + mid_channel + high_channel + EPSILON), 0.0, 1.0))
+            beach_scent_signature = float(np.clip(np.std(thirds[0]) / (np.mean(np.abs(stacked)) + EPSILON), 0.0, 1.0))
+        else:
+            warmth_scent_signature = 0.0
+            beach_scent_signature = 0.0
+        
+        if stacked.shape[0] > 2:
+            acceleration = np.diff(temporal_gradient, axis=0)
+            wind_swirl_complexity = float(np.clip(
+                np.std(acceleration) / (np.mean(np.abs(temporal_gradient)) + EPSILON), 0.0, 1.0
+            ))
+            envelope = np.mean(stacked, axis=1)
+            wave_retreat_crash_cycle = float(np.clip(np.mean(np.abs(np.diff(envelope))), 0.0, 1.0))
+            if len(envelope) > 3:
+                cycle_non_repeatability = float(np.clip(np.std(np.diff(envelope, n=2)), 0.0, 1.0))
+            else:
+                cycle_non_repeatability = 0.0
+        else:
+            wind_swirl_complexity = 0.0
+            wave_retreat_crash_cycle = 0.0
+            cycle_non_repeatability = 0.0
+        
+        cool_breeze_hot_sun_contrast = float(np.clip(
+            np.abs(solar_warmth_radiation - wind_velocity_proxy), 0.0, 1.0
+        ))
+        
+        # Equal weighting intentionally keeps this as a neutral aggregate baseline signal.
+        environmental_turbulence = float(np.clip(np.mean([
+            light_frequency_flux,
+            tone_variability,
+            color_drift,
+            wind_velocity_proxy,
+            wind_swirl_complexity,
+            wave_retreat_crash_cycle,
+            cycle_non_repeatability,
+            cool_breeze_hot_sun_contrast
+        ]), 0.0, 1.0))
+        
+        return {
+            'light_frequency_flux': light_frequency_flux,
+            'tone_variability': tone_variability,
+            'color_drift': color_drift,
+            'wind_velocity_proxy': wind_velocity_proxy,
+            'wind_swirl_complexity': wind_swirl_complexity,
+            'wave_retreat_crash_cycle': wave_retreat_crash_cycle,
+            'cycle_non_repeatability': cycle_non_repeatability,
+            'solar_warmth_radiation': solar_warmth_radiation,
+            'ocular_brightness_glare': ocular_brightness_glare,
+            'warmth_scent_signature': warmth_scent_signature,
+            'cool_breeze_hot_sun_contrast': cool_breeze_hot_sun_contrast,
+            'beach_scent_signature': beach_scent_signature,
+            'environmental_turbulence': environmental_turbulence
+        }
+    
+    def _compute_behavioral_fluidity_markers(self, memories: List[Dict]) -> Dict[str, float]:
+        """Estimate fine-grained human movement/speech/fidget signatures from sensory flow"""
+        if not memories:
+            return {
+                'walk_fluidity': 0.0,
+                'talk_flow_variability': 0.0,
+                'personal_tic_density': 0.0,
+                'hair_flick_impulsivity': 0.0,
+                'throat_clearing_likelihood': 0.0,
+                'finger_flick_rate': 0.0,
+                'foot_bounce_rhythm': 0.0,
+                'nail_chewing_compulsion_proxy': 0.0,
+                'sweat_response_intensity': 0.0,
+                'glance_misdirection_index': 0.0,
+                'overall_fidget_index': 0.0
+            }
+        
+        sensory_series = []
+        for memory in memories:
+            if isinstance(memory, dict) and memory.get('sensory_data') is not None:
+                sensor_array = np.asarray(memory['sensory_data'], dtype=float).reshape(-1)
+                if sensor_array.size > 0 and np.all(np.isfinite(sensor_array)):
+                    sensory_series.append(sensor_array)
+        
+        if not sensory_series:
+            return {
+                'walk_fluidity': 0.0,
+                'talk_flow_variability': 0.0,
+                'personal_tic_density': 0.0,
+                'hair_flick_impulsivity': 0.0,
+                'throat_clearing_likelihood': 0.0,
+                'finger_flick_rate': 0.0,
+                'foot_bounce_rhythm': 0.0,
+                'nail_chewing_compulsion_proxy': 0.0,
+                'sweat_response_intensity': 0.0,
+                'glance_misdirection_index': 0.0,
+                'overall_fidget_index': 0.0
+            }
+        
+        stacked = np.vstack(sensory_series)
+        temporal_gradient = np.diff(stacked, axis=0) if stacked.shape[0] > 1 else np.zeros_like(stacked)
+        temporal_acceleration = np.diff(temporal_gradient, axis=0) if stacked.shape[0] > 2 else np.zeros_like(temporal_gradient)
+        
+        jerk_energy = float(np.mean(np.abs(temporal_acceleration))) if temporal_acceleration.size else 0.0
+        motion_energy = float(np.mean(np.abs(temporal_gradient))) if temporal_gradient.size else 0.0
+        walk_fluidity = float(np.clip(1.0 - (jerk_energy / (motion_energy + EPSILON)), 0.0, 1.0))
+        
+        centered = stacked - np.mean(stacked, axis=1, keepdims=True)
+        spectrum = np.abs(np.fft.rfft(centered, axis=1))
+        if spectrum.shape[1] > 4:
+            speech_band = spectrum[:, spectrum.shape[1] // BEHAVIOR_SPEECH_BAND_START_RATIO:spectrum.shape[1] // BEHAVIOR_SPEECH_BAND_END_RATIO]
+            talk_flow_variability = float(np.clip(np.std(speech_band) / (np.mean(speech_band) + EPSILON), 0.0, 1.0))
+        else:
+            talk_flow_variability = 0.0
+        
+        if temporal_gradient.size:
+            grad_abs = np.abs(temporal_gradient)
+            burst_threshold = np.percentile(grad_abs, BEHAVIOR_TIC_BURST_PERCENTILE)
+            personal_tic_density = float(np.clip(np.mean(grad_abs > burst_threshold), 0.0, 1.0))
+            gradient_sign = np.sign(temporal_gradient)
+            sign_change = np.abs(gradient_sign[:, 1:] - gradient_sign[:, :-1]) > 0
+            finger_flick_rate = float(np.clip(np.mean(sign_change), 0.0, 1.0))
+        else:
+            personal_tic_density = 0.0
+            finger_flick_rate = 0.0
+        
+        if temporal_acceleration.size:
+            accel_abs = np.abs(temporal_acceleration)
+            hair_flick_impulsivity = float(np.clip(
+                np.mean(accel_abs > np.percentile(accel_abs, BEHAVIOR_IMPULSIVITY_PERCENTILE)), 0.0, 1.0
+            ))
+        else:
+            hair_flick_impulsivity = 0.0
+        
+        if spectrum.shape[1] > 6:
+            throat_band = spectrum[:, spectrum.shape[1] // BEHAVIOR_THROAT_BAND_START_RATIO:spectrum.shape[1] // BEHAVIOR_THROAT_BAND_END_RATIO]
+            throat_clearing_likelihood = float(np.clip(np.mean(throat_band) / (np.mean(spectrum[:, 1:]) + EPSILON), 0.0, 1.0))
+        else:
+            throat_clearing_likelihood = 0.0
+        
+        envelope = np.mean(stacked, axis=1)
+        if len(envelope) > 4:
+            demeaned = envelope - np.mean(envelope)
+            autocorr = np.correlate(demeaned, demeaned, mode='full')[len(demeaned)-1:]
+            if len(autocorr) > 2 and np.max(np.abs(autocorr[1:])) > 0:
+                foot_bounce_rhythm = float(np.clip(np.max(autocorr[1:]) / (autocorr[0] + EPSILON), 0.0, 1.0))
+            else:
+                foot_bounce_rhythm = 0.0
+            nail_chewing_compulsion_proxy = float(np.clip(np.mean(np.abs(np.diff(envelope, n=2))), 0.0, 1.0))
+            sweat_response_intensity = float(np.clip(np.std(envelope) / (np.mean(np.abs(envelope)) + EPSILON), 0.0, 1.0))
+        else:
+            foot_bounce_rhythm = 0.0
+            nail_chewing_compulsion_proxy = 0.0
+            sweat_response_intensity = 0.0
+        
+        if stacked.shape[1] >= 6 and len(envelope) > 3:
+            segments = np.array_split(stacked, BEHAVIOR_GLANCE_SEGMENT_COUNT, axis=1)
+            segment_energy = np.stack([np.mean(np.abs(seg), axis=1) for seg in segments], axis=1)
+            attended_segment = np.argmax(segment_energy, axis=1)
+            column_diff = np.abs(np.diff(stacked, axis=1))
+            overt_position = np.argmax(column_diff, axis=1)
+            overt_segment = np.clip(
+                (overt_position * BEHAVIOR_GLANCE_SEGMENT_COUNT) // max(1, stacked.shape[1] - 1),
+                0,
+                BEHAVIOR_GLANCE_SEGMENT_COUNT - 1
+            )
+            mismatch = attended_segment != overt_segment
+            glance_misdirection_index = float(np.clip(np.mean(mismatch.astype(float)), 0.0, 1.0))
+        else:
+            glance_misdirection_index = 0.0
+        
+        # Equal weighting intentionally keeps this as a broad stress/fidget composite.
+        overall_fidget_index = float(np.clip(np.mean([
+            personal_tic_density,
+            hair_flick_impulsivity,
+            finger_flick_rate,
+            foot_bounce_rhythm,
+            nail_chewing_compulsion_proxy,
+            sweat_response_intensity,
+            glance_misdirection_index
+        ]), 0.0, 1.0))
+        
+        return {
+            'walk_fluidity': walk_fluidity,
+            'talk_flow_variability': talk_flow_variability,
+            'personal_tic_density': personal_tic_density,
+            'hair_flick_impulsivity': hair_flick_impulsivity,
+            'throat_clearing_likelihood': throat_clearing_likelihood,
+            'finger_flick_rate': finger_flick_rate,
+            'foot_bounce_rhythm': foot_bounce_rhythm,
+            'nail_chewing_compulsion_proxy': nail_chewing_compulsion_proxy,
+            'sweat_response_intensity': sweat_response_intensity,
+            'glance_misdirection_index': glance_misdirection_index,
+            'overall_fidget_index': overall_fidget_index
+        }
+    
+    def _compute_distress_state(self,
+                                decision_state: Dict[str, float],
+                                affective_landscape: Dict[str, float],
+                                behavioral_fluidity: Dict[str, float]) -> Dict[str, float]:
+        """Estimate severe stress/despair bodily-cognitive signature from intent context"""
+        pressure = decision_state.get('choice_pressure', 0.0)
+        indecision = decision_state.get('indecision', 0.0)
+        grief = affective_landscape.get('grief_of_loss', 0.0)
+        fidget = behavioral_fluidity.get('overall_fidget_index', 0.0)
+        sweat = behavioral_fluidity.get('sweat_response_intensity', 0.0)
+        throat = behavioral_fluidity.get('throat_clearing_likelihood', 0.0)
+        
+        hopelessness_index = float(np.clip(0.45 * grief + 0.3 * indecision + 0.25 * (1.0 - decision_state.get('commitment', 0.0)), 0.0, 1.0))
+        gut_churning_stress = float(np.clip(0.5 * pressure + 0.3 * fidget + 0.2 * sweat, 0.0, 1.0))
+        stress_headache_load = float(np.clip(0.45 * pressure + 0.35 * throat + 0.2 * indecision, 0.0, 1.0))
+        dry_mouth_stress = float(np.clip(0.55 * sweat + 0.25 * pressure + 0.2 * throat, 0.0, 1.0))
+        
+        desperation_index = float(np.clip(np.mean([
+            hopelessness_index,
+            gut_churning_stress,
+            stress_headache_load,
+            dry_mouth_stress
+        ]), 0.0, 1.0))
+        
+        return {
+            'hopelessness_index': hopelessness_index,
+            'gut_churning_stress': gut_churning_stress,
+            'stress_headache_load': stress_headache_load,
+            'dry_mouth_stress': dry_mouth_stress,
+            'desperation_index': desperation_index
         }
     
     def _estimate_agency(self) -> float:
