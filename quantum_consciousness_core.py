@@ -998,7 +998,8 @@ class SyntheticConsciousness:
         
         if stacked.shape[0] > 2:
             rhythmic_change = np.abs(np.diff(np.mean(stacked, axis=1)))
-            periodicity = float(np.std(np.diff(rhythmic_change))) if len(rhythmic_change) > 1 else 1.0
+            rhythmic_delta = np.diff(rhythmic_change) if len(rhythmic_change) > 1 else np.array([])
+            periodicity = float(np.std(rhythmic_delta)) if len(rhythmic_delta) > 0 else 1.0
             sleep_movement_likelihood = float(np.clip(1.0 / (1.0 + periodicity), 0.0, 1.0))
         else:
             sleep_movement_likelihood = 0.0
@@ -1102,8 +1103,14 @@ class SyntheticConsciousness:
         environmental_turbulence = environmental_dynamics.get('environmental_turbulence', 0.0)
         fidget_index = behavioral_fluidity.get('overall_fidget_index', 0.0)
         despair = distress_state.get('desperation_index', 0.0)
+        overload = distress_state.get('psychological_overload_risk', 0.0)
+        paranoia = distress_state.get('paranoia_hypervigilance', 0.0)
         if pressure > HUMAN_INTENT_IMMEDIATE_PRESSURE_THRESHOLD:
             when = 'immediate'
+        elif overload > 0.75:
+            when = 'containment_required'
+        elif paranoia > 0.7:
+            when = 'safety_reassurance_window'
         elif despair > 0.75:
             when = 'acute_crisis_window'
         elif environmental_turbulence > HUMAN_INTENT_HIGH_ENVIRONMENTAL_TURBULENCE_THRESHOLD:
@@ -1117,6 +1124,10 @@ class SyntheticConsciousness:
         
         if indecision > HUMAN_INTENT_HIGH_INDECISION_THRESHOLD:
             how = 'iterative_reassessment'
+        elif overload > 0.75:
+            how = 'deescalation_protocol'
+        elif paranoia > 0.7:
+            how = 'grounding_and_reality_check'
         elif despair > 0.75:
             how = 'stabilize_and_reduce_overload'
         elif fidget_index > 0.65:
@@ -1246,7 +1257,8 @@ class SyntheticConsciousness:
             np.abs(solar_warmth_radiation - wind_velocity_proxy), 0.0, 1.0
         ))
         
-        # Equal weighting intentionally keeps this as a neutral aggregate baseline signal.
+        # Equal weighting intentionally keeps this as a neutral aggregate for dynamic-instability signals.
+        # Warmth/glare/scent channels are tracked separately and excluded from turbulence on purpose.
         environmental_turbulence = float(np.clip(np.mean([
             light_frequency_flux,
             tone_variability,
@@ -1376,7 +1388,7 @@ class SyntheticConsciousness:
             column_diff = np.abs(np.diff(stacked, axis=1))
             overt_position = np.argmax(column_diff, axis=1)
             overt_segment = np.clip(
-                (overt_position * BEHAVIOR_GLANCE_SEGMENT_COUNT) // max(1, stacked.shape[1] - 1),
+                (overt_position * BEHAVIOR_GLANCE_SEGMENT_COUNT) // (stacked.shape[1] - 1),
                 0,
                 BEHAVIOR_GLANCE_SEGMENT_COUNT - 1
             )
@@ -1386,6 +1398,7 @@ class SyntheticConsciousness:
             glance_misdirection_index = 0.0
         
         # Equal weighting intentionally keeps this as a broad stress/fidget composite.
+        # Walk/talk metrics are tracked independently rather than folded into this stress-centric index.
         overall_fidget_index = float(np.clip(np.mean([
             personal_tic_density,
             hair_flick_impulsivity,
@@ -1426,12 +1439,43 @@ class SyntheticConsciousness:
         gut_churning_stress = float(np.clip(0.5 * pressure + 0.3 * fidget + 0.2 * sweat, 0.0, 1.0))
         stress_headache_load = float(np.clip(0.45 * pressure + 0.35 * throat + 0.2 * indecision, 0.0, 1.0))
         dry_mouth_stress = float(np.clip(0.55 * sweat + 0.25 * pressure + 0.2 * throat, 0.0, 1.0))
+        internal_rage_pressure = float(np.clip(
+            0.45 * pressure + 0.35 * fidget + 0.2 * behavioral_fluidity.get('personal_tic_density', 0.0),
+            0.0, 1.0
+        ))
+        hurt_outburst_risk = float(np.clip(
+            0.4 * hopelessness_index + 0.35 * internal_rage_pressure + 0.25 * stress_headache_load,
+            0.0, 1.0
+        ))
+        psychological_overload_risk = float(np.clip(
+            np.mean([hurt_outburst_risk, gut_churning_stress, dry_mouth_stress]),
+            0.0, 1.0
+        ))
+        jumpy_hyperarousal = float(np.clip(
+            0.45 * fidget + 0.35 * behavioral_fluidity.get('glance_misdirection_index', 0.0) + 0.2 * pressure,
+            0.0, 1.0
+        ))
+        paranoia_hypervigilance = float(np.clip(
+            0.4 * jumpy_hyperarousal + 0.35 * indecision + 0.25 * behavioral_fluidity.get('glance_misdirection_index', 0.0),
+            0.0, 1.0
+        ))
+        social_scrutiny_fear = float(np.clip(
+            0.5 * paranoia_hypervigilance + 0.3 * sweat + 0.2 * throat,
+            0.0, 1.0
+        ))
+        mental_dysregulation_fear = float(np.clip(
+            0.35 * hopelessness_index + 0.35 * paranoia_hypervigilance + 0.3 * psychological_overload_risk,
+            0.0, 1.0
+        ))
         
         desperation_index = float(np.clip(np.mean([
             hopelessness_index,
             gut_churning_stress,
             stress_headache_load,
-            dry_mouth_stress
+            dry_mouth_stress,
+            hurt_outburst_risk,
+            psychological_overload_risk,
+            mental_dysregulation_fear
         ]), 0.0, 1.0))
         
         return {
@@ -1439,6 +1483,13 @@ class SyntheticConsciousness:
             'gut_churning_stress': gut_churning_stress,
             'stress_headache_load': stress_headache_load,
             'dry_mouth_stress': dry_mouth_stress,
+            'internal_rage_pressure': internal_rage_pressure,
+            'hurt_outburst_risk': hurt_outburst_risk,
+            'psychological_overload_risk': psychological_overload_risk,
+            'jumpy_hyperarousal': jumpy_hyperarousal,
+            'paranoia_hypervigilance': paranoia_hypervigilance,
+            'social_scrutiny_fear': social_scrutiny_fear,
+            'mental_dysregulation_fear': mental_dysregulation_fear,
             'desperation_index': desperation_index
         }
     
