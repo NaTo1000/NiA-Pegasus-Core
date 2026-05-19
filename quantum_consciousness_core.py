@@ -23,6 +23,44 @@ import time
 import math
 import cmath
 
+EPSILON = 1e-8
+
+# Human-intent inference tuning constants
+MICRO_SIGNAL_DUST_SALIENCE_SCALE = 0.25
+MICRO_SIGNAL_INFANT_BAND_LOWER_RATIO = 4
+MICRO_SIGNAL_INFANT_BAND_UPPER_RATIO = 2
+MICRO_SIGNAL_LOW_BAND_RATIO = 8
+MICRO_SIGNAL_LOW_BAND_MIN_BINS = 2
+MICRO_SIGNAL_MIN_SPATIAL_DIMENSIONS = 2
+
+DECISION_PRESSURE_FEAR_WEIGHT = 0.35
+DECISION_PRESSURE_ANGER_WEIGHT = 0.2
+DECISION_PRESSURE_ANTICIPATION_WEIGHT = 0.15
+DECISION_PRESSURE_INDECISION_WEIGHT = 0.15
+DECISION_PRESSURE_LOW_AGENCY_WEIGHT = 0.15
+# Keep normalized for bounded pressure output in [0, 1].
+DECISION_PRESSURE_WEIGHT_SUM = (
+    DECISION_PRESSURE_FEAR_WEIGHT +
+    DECISION_PRESSURE_ANGER_WEIGHT +
+    DECISION_PRESSURE_ANTICIPATION_WEIGHT +
+    DECISION_PRESSURE_INDECISION_WEIGHT +
+    DECISION_PRESSURE_LOW_AGENCY_WEIGHT
+)
+
+AFFECT_GRIEF_BASE_WEIGHT = 0.6
+AFFECT_GRIEF_FEAR_WEIGHT = 0.4
+AFFECT_LOVE_BASE_WEIGHT = 0.5
+AFFECT_LOVE_TRUST_WEIGHT = 0.5
+AFFECT_TRIUMPH_BASE_WEIGHT = 0.7
+AFFECT_TRIUMPH_COMMITMENT_WEIGHT = 0.3
+AFFECT_ACCOMPLISHMENT_INDECISION_DAMPING = 0.5
+
+HUMAN_INTENT_FOCUS_DETECTION_THRESHOLD = 0.2
+HUMAN_INTENT_IMMEDIATE_PRESSURE_THRESHOLD = 0.65
+HUMAN_INTENT_NEAR_TERM_PRESSURE_THRESHOLD = 0.35
+HUMAN_INTENT_HIGH_INDECISION_THRESHOLD = 0.6
+HUMAN_INTENT_CONSTRAINED_DECISION_PRESSURE_THRESHOLD = 0.55
+
 # Q-CTRL Integration
 class QCTRLOptimizer:
     """Q-CTRL Boulder Opal integration for quantum control optimization"""
@@ -879,28 +917,53 @@ class SyntheticConsciousness:
                 'sleep_movement_likelihood': 0.0
             }
         
-        sensory_series = [np.asarray(m['sensory_data'], dtype=float) for m in memories]
+        sensory_series = []
+        for memory in memories:
+            if isinstance(memory, dict) and memory.get('sensory_data') is not None:
+                # Flatten heterogeneous sensor payloads into a common 1D signature for micro-signal analysis.
+                sensor_array = np.asarray(memory['sensory_data'], dtype=float).reshape(-1)
+                if sensor_array.size > 0 and np.all(np.isfinite(sensor_array)):
+                    sensory_series.append(sensor_array)
+        
+        if not sensory_series:
+            return {
+                'stutter_signal': 0.0,
+                'dust_mote_salience': 0.0,
+                'infant_vocalization_likelihood': 0.0,
+                'sleep_movement_likelihood': 0.0
+            }
+        
         stacked = np.vstack(sensory_series)
         
-        temporal_delta = np.diff(stacked, axis=0) if stacked.shape[0] > 1 else np.zeros_like(stacked)
-        temporal_jitter = float(np.mean(np.abs(temporal_delta)))
-        
         if stacked.shape[0] > 1:
+            temporal_delta = np.diff(stacked, axis=0)
+            temporal_jitter = float(np.mean(np.abs(temporal_delta)))
             oscillation = np.diff(temporal_delta, axis=0)
-            stutter_signal = float(np.clip(np.mean(np.abs(oscillation)) / (temporal_jitter + 1e-8), 0.0, 1.0))
+            stutter_signal = float(np.clip(np.mean(np.abs(oscillation)) / (temporal_jitter + EPSILON), 0.0, 1.0))
         else:
+            temporal_jitter = 0.0
             stutter_signal = 0.0
         
         low_energy = float(np.mean(np.abs(stacked)))
-        texture = np.mean(np.abs(np.diff(stacked, axis=1))) if stacked.shape[1] > 1 else 0.0
-        dust_mote_salience = float(np.clip((texture / (low_energy + 1e-8)) * 0.25, 0.0, 1.0))
+        spatial_variation = (
+            np.mean(np.abs(np.diff(stacked, axis=1)))
+            if stacked.shape[1] >= MICRO_SIGNAL_MIN_SPATIAL_DIMENSIONS
+            else 0.0
+        )
+        dust_mote_salience = float(np.clip(
+            (spatial_variation / (low_energy + EPSILON)) * MICRO_SIGNAL_DUST_SALIENCE_SCALE, 0.0, 1.0
+        ))
         
         centered = stacked - np.mean(stacked, axis=1, keepdims=True)
         spectrum = np.abs(np.fft.rfft(centered, axis=1))
-        if spectrum.shape[1] > 4:
-            infant_band = float(np.mean(spectrum[:, spectrum.shape[1] // 4:spectrum.shape[1] // 2]))
-            low_band = float(np.mean(spectrum[:, 1:max(2, spectrum.shape[1] // 8)]))
-            infant_vocalization_likelihood = float(np.clip(infant_band / (infant_band + low_band + 1e-8), 0.0, 1.0))
+        if spectrum.shape[1] > MICRO_SIGNAL_INFANT_BAND_LOWER_RATIO * 2:
+            infant_low = spectrum.shape[1] // MICRO_SIGNAL_INFANT_BAND_LOWER_RATIO
+            infant_high = spectrum.shape[1] // MICRO_SIGNAL_INFANT_BAND_UPPER_RATIO
+            low_band_end = max(MICRO_SIGNAL_LOW_BAND_MIN_BINS, spectrum.shape[1] // MICRO_SIGNAL_LOW_BAND_RATIO)
+            
+            infant_band = float(np.mean(spectrum[:, infant_low:infant_high]))
+            low_band = float(np.mean(spectrum[:, 1:low_band_end]))
+            infant_vocalization_likelihood = float(np.clip(infant_band / (infant_band + low_band + EPSILON), 0.0, 1.0))
         else:
             infant_vocalization_likelihood = 0.0
         
@@ -920,12 +983,19 @@ class SyntheticConsciousness:
     
     def _compute_decision_state(self, direction: np.ndarray, agency: float) -> Dict[str, float]:
         """Estimate indecision and decision pressure from trajectory and affect"""
+        if abs(DECISION_PRESSURE_WEIGHT_SUM - 1.0) > 1e-9:
+            raise ValueError("Decision pressure weights must sum to 1.0")
+
         commitment = float(np.clip(np.abs(direction).max(), 0.0, 1.0))
         indecision = float(1.0 - commitment)
         
-        joy, sadness, anger, fear, _, _, trust, anticipation = self.emotional_state
+        _, _, anger, fear, _, _, _, anticipation = self.emotional_state
         pressure = float(np.clip(
-            0.35 * fear + 0.2 * anger + 0.15 * anticipation + 0.15 * indecision + 0.15 * (1.0 - agency),
+            DECISION_PRESSURE_FEAR_WEIGHT * fear +
+            DECISION_PRESSURE_ANGER_WEIGHT * anger +
+            DECISION_PRESSURE_ANTICIPATION_WEIGHT * anticipation +
+            DECISION_PRESSURE_INDECISION_WEIGHT * indecision +
+            DECISION_PRESSURE_LOW_AGENCY_WEIGHT * (1.0 - agency),
             0.0, 1.0
         ))
         
@@ -941,10 +1011,24 @@ class SyntheticConsciousness:
         commitment = decision_state.get('commitment', 0.0)
         indecision = decision_state.get('indecision', 0.0)
         
-        grief_of_loss = float(np.clip(sadness * (0.6 + 0.4 * fear), 0.0, 1.0))
-        joy_of_love = float(np.clip(joy * (0.5 + 0.5 * trust), 0.0, 1.0))
-        triumph_of_achievement = float(np.clip(joy * anticipation * (0.7 + 0.3 * commitment), 0.0, 1.0))
-        happiness_of_accomplishment = float(np.clip(joy * commitment * (1.0 - 0.5 * indecision), 0.0, 1.0))
+        # Grief increases with sadness and is amplified by fear of irreversible loss.
+        grief_of_loss = float(np.clip(
+            sadness * (AFFECT_GRIEF_BASE_WEIGHT + AFFECT_GRIEF_FEAR_WEIGHT * fear), 0.0, 1.0
+        ))
+        # Love-linked joy is modeled as joy reinforced by trust.
+        joy_of_love = float(np.clip(
+            joy * (AFFECT_LOVE_BASE_WEIGHT + AFFECT_LOVE_TRUST_WEIGHT * trust), 0.0, 1.0
+        ))
+        # Triumph emerges from joy + anticipation, then strengthens with commitment.
+        triumph_of_achievement = float(np.clip(
+            joy * anticipation * (AFFECT_TRIUMPH_BASE_WEIGHT + AFFECT_TRIUMPH_COMMITMENT_WEIGHT * commitment),
+            0.0, 1.0
+        ))
+        # Accomplishment happiness rises with commitment but is dampened by indecision.
+        happiness_of_accomplishment = float(np.clip(
+            joy * commitment * (1.0 - AFFECT_ACCOMPLISHMENT_INDECISION_DAMPING * indecision),
+            0.0, 1.0
+        ))
         
         return {
             'grief_of_loss': grief_of_loss,
@@ -964,10 +1048,19 @@ class SyntheticConsciousness:
             'companion_animal': micro_signals.get('sleep_movement_likelihood', 0.0),
             'ambient_environment': micro_signals.get('dust_mote_salience', 0.0)
         }
-        who = max(focus_scores, key=focus_scores.get) if max(focus_scores.values()) > 0.2 else 'self_and_others'
+        valid_focus_scores = {k: float(v) for k, v in focus_scores.items() if np.isfinite(v)}
+        if valid_focus_scores:
+            who_candidate, max_focus_score = max(valid_focus_scores.items(), key=lambda item: item[1])
+        else:
+            who_candidate, max_focus_score = 'self_and_others', 0.0
+        who = (
+            who_candidate
+            if max_focus_score > HUMAN_INTENT_FOCUS_DETECTION_THRESHOLD
+            else 'self_and_others'
+        )
         
         if intentions:
-            why = intentions[0]
+            why = " + ".join(intentions[:2])
         elif affective_landscape.get('grief_of_loss', 0.0) > 0.4:
             why = 'process_loss_and_recover'
         elif affective_landscape.get('joy_of_love', 0.0) > 0.4:
@@ -977,16 +1070,16 @@ class SyntheticConsciousness:
         
         pressure = decision_state.get('choice_pressure', 0.0)
         indecision = decision_state.get('indecision', 0.0)
-        if pressure > 0.65:
+        if pressure > HUMAN_INTENT_IMMEDIATE_PRESSURE_THRESHOLD:
             when = 'immediate'
-        elif pressure > 0.35:
+        elif pressure > HUMAN_INTENT_NEAR_TERM_PRESSURE_THRESHOLD:
             when = 'near_term'
         else:
             when = 'reflective_window'
         
-        if indecision > 0.6:
+        if indecision > HUMAN_INTENT_HIGH_INDECISION_THRESHOLD:
             how = 'iterative_reassessment'
-        elif pressure > 0.55:
+        elif pressure > HUMAN_INTENT_CONSTRAINED_DECISION_PRESSURE_THRESHOLD:
             how = 'constrained_decision_making'
         else:
             how = 'deliberate_confident_action'
