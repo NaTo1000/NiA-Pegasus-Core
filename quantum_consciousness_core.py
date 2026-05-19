@@ -812,7 +812,20 @@ class SyntheticConsciousness:
         
         # Analyze recent memories for patterns
         if len(self.memory_buffer) < 2:
-            return {'goals': [], 'intentions': [], 'agency': 0.0}
+            return {
+                'goals': [],
+                'intentions': [],
+                'agency': 0.0,
+                'human_intent': {
+                    'who': 'undetermined',
+                    'why': 'insufficient_context',
+                    'when': 'undetermined',
+                    'how': 'undetermined',
+                    'micro_signals': {},
+                    'decision_state': {},
+                    'affective_landscape': {}
+                }
+            }
         
         # Extract trajectory in consciousness space
         recent_states = [m['consciousness_snapshot'] for m in list(self.memory_buffer)[-10:]]
@@ -836,12 +849,156 @@ class SyntheticConsciousness:
         if self.emotional_state[7] > 0.3:  # Anticipation
             intentions.append("explore_possibilities")
         
+        recent_memories = list(self.memory_buffer)[-20:]
+        micro_signals = self._extract_micro_signal_markers(recent_memories)
+        decision_state = self._compute_decision_state(direction, agency)
+        affective_landscape = self._compute_affective_landscape(decision_state)
+        human_intent = self._compose_human_intent_logic(
+            intentions=intentions,
+            micro_signals=micro_signals,
+            decision_state=decision_state,
+            affective_landscape=affective_landscape
+        )
+        
         return {
             'goals': self.self_model['goals'],
             'intentions': intentions,
             'agency': agency,
             'direction_vector': direction,
-            'commitment_strength': np.abs(direction).max()
+            'commitment_strength': np.abs(direction).max(),
+            'human_intent': human_intent
+        }
+    
+    def _extract_micro_signal_markers(self, memories: List[Dict]) -> Dict[str, float]:
+        """Extract subtle low-amplitude sensory markers associated with human context"""
+        if not memories:
+            return {
+                'stutter_signal': 0.0,
+                'dust_mote_salience': 0.0,
+                'infant_vocalization_likelihood': 0.0,
+                'sleep_movement_likelihood': 0.0
+            }
+        
+        sensory_series = [np.asarray(m['sensory_data'], dtype=float) for m in memories]
+        stacked = np.vstack(sensory_series)
+        
+        temporal_delta = np.diff(stacked, axis=0) if stacked.shape[0] > 1 else np.zeros_like(stacked)
+        temporal_jitter = float(np.mean(np.abs(temporal_delta)))
+        
+        if stacked.shape[0] > 1:
+            oscillation = np.diff(temporal_delta, axis=0)
+            stutter_signal = float(np.clip(np.mean(np.abs(oscillation)) / (temporal_jitter + 1e-8), 0.0, 1.0))
+        else:
+            stutter_signal = 0.0
+        
+        low_energy = float(np.mean(np.abs(stacked)))
+        texture = np.mean(np.abs(np.diff(stacked, axis=1))) if stacked.shape[1] > 1 else 0.0
+        dust_mote_salience = float(np.clip((texture / (low_energy + 1e-8)) * 0.25, 0.0, 1.0))
+        
+        centered = stacked - np.mean(stacked, axis=1, keepdims=True)
+        spectrum = np.abs(np.fft.rfft(centered, axis=1))
+        if spectrum.shape[1] > 4:
+            infant_band = float(np.mean(spectrum[:, spectrum.shape[1] // 4:spectrum.shape[1] // 2]))
+            low_band = float(np.mean(spectrum[:, 1:max(2, spectrum.shape[1] // 8)]))
+            infant_vocalization_likelihood = float(np.clip(infant_band / (infant_band + low_band + 1e-8), 0.0, 1.0))
+        else:
+            infant_vocalization_likelihood = 0.0
+        
+        if stacked.shape[0] > 2:
+            rhythmic_change = np.abs(np.diff(np.mean(stacked, axis=1)))
+            periodicity = float(np.std(np.diff(rhythmic_change))) if len(rhythmic_change) > 1 else 1.0
+            sleep_movement_likelihood = float(np.clip(1.0 / (1.0 + periodicity), 0.0, 1.0))
+        else:
+            sleep_movement_likelihood = 0.0
+        
+        return {
+            'stutter_signal': stutter_signal,
+            'dust_mote_salience': dust_mote_salience,
+            'infant_vocalization_likelihood': infant_vocalization_likelihood,
+            'sleep_movement_likelihood': sleep_movement_likelihood
+        }
+    
+    def _compute_decision_state(self, direction: np.ndarray, agency: float) -> Dict[str, float]:
+        """Estimate indecision and decision pressure from trajectory and affect"""
+        commitment = float(np.clip(np.abs(direction).max(), 0.0, 1.0))
+        indecision = float(1.0 - commitment)
+        
+        joy, sadness, anger, fear, _, _, trust, anticipation = self.emotional_state
+        pressure = float(np.clip(
+            0.35 * fear + 0.2 * anger + 0.15 * anticipation + 0.15 * indecision + 0.15 * (1.0 - agency),
+            0.0, 1.0
+        ))
+        
+        return {
+            'indecision': indecision,
+            'choice_pressure': pressure,
+            'commitment': commitment
+        }
+    
+    def _compute_affective_landscape(self, decision_state: Dict[str, float]) -> Dict[str, float]:
+        """Model nuanced emotional gradients involved in meaningful intent formation"""
+        joy, sadness, _, fear, _, _, trust, anticipation = self.emotional_state
+        commitment = decision_state.get('commitment', 0.0)
+        indecision = decision_state.get('indecision', 0.0)
+        
+        grief_of_loss = float(np.clip(sadness * (0.6 + 0.4 * fear), 0.0, 1.0))
+        joy_of_love = float(np.clip(joy * (0.5 + 0.5 * trust), 0.0, 1.0))
+        triumph_of_achievement = float(np.clip(joy * anticipation * (0.7 + 0.3 * commitment), 0.0, 1.0))
+        happiness_of_accomplishment = float(np.clip(joy * commitment * (1.0 - 0.5 * indecision), 0.0, 1.0))
+        
+        return {
+            'grief_of_loss': grief_of_loss,
+            'joy_of_love': joy_of_love,
+            'triumph_of_achievement': triumph_of_achievement,
+            'happiness_of_accomplishment': happiness_of_accomplishment
+        }
+    
+    def _compose_human_intent_logic(self,
+                                    intentions: List[str],
+                                    micro_signals: Dict[str, float],
+                                    decision_state: Dict[str, float],
+                                    affective_landscape: Dict[str, float]) -> Dict[str, Any]:
+        """Compose the full human-intent frame with who/why/when/how semantics"""
+        focus_scores = {
+            'infant': micro_signals.get('infant_vocalization_likelihood', 0.0),
+            'companion_animal': micro_signals.get('sleep_movement_likelihood', 0.0),
+            'ambient_environment': micro_signals.get('dust_mote_salience', 0.0)
+        }
+        who = max(focus_scores, key=focus_scores.get) if max(focus_scores.values()) > 0.2 else 'self_and_others'
+        
+        if intentions:
+            why = intentions[0]
+        elif affective_landscape.get('grief_of_loss', 0.0) > 0.4:
+            why = 'process_loss_and_recover'
+        elif affective_landscape.get('joy_of_love', 0.0) > 0.4:
+            why = 'preserve_connection_and_care'
+        else:
+            why = 'maintain_coherent_progress'
+        
+        pressure = decision_state.get('choice_pressure', 0.0)
+        indecision = decision_state.get('indecision', 0.0)
+        if pressure > 0.65:
+            when = 'immediate'
+        elif pressure > 0.35:
+            when = 'near_term'
+        else:
+            when = 'reflective_window'
+        
+        if indecision > 0.6:
+            how = 'iterative_reassessment'
+        elif pressure > 0.55:
+            how = 'constrained_decision_making'
+        else:
+            how = 'deliberate_confident_action'
+        
+        return {
+            'who': who,
+            'why': why,
+            'when': when,
+            'how': how,
+            'micro_signals': micro_signals,
+            'decision_state': decision_state,
+            'affective_landscape': affective_landscape
         }
     
     def _estimate_agency(self) -> float:
