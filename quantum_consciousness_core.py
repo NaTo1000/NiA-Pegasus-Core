@@ -68,6 +68,7 @@ HUMAN_INTENT_NEAR_TERM_PRESSURE_THRESHOLD = 0.35
 HUMAN_INTENT_HIGH_INDECISION_THRESHOLD = 0.6
 HUMAN_INTENT_CONSTRAINED_DECISION_PRESSURE_THRESHOLD = 0.55
 HUMAN_INTENT_HIGH_ENVIRONMENTAL_TURBULENCE_THRESHOLD = 0.6
+HUMAN_INTENT_HIGH_BIOLOGICAL_UNCERTAINTY_THRESHOLD = 0.7
 HUMAN_INTENT_MAX_INTENT_REASONS = 2
 
 BEHAVIOR_SPEECH_BAND_START_RATIO = 5
@@ -881,6 +882,7 @@ class SyntheticConsciousness:
                     'affective_landscape': {},
                     'environmental_dynamics': {},
                     'behavioral_fluidity': {},
+                    'biological_factors': {},
                     'distress_state': {}
                 }
             }
@@ -913,6 +915,7 @@ class SyntheticConsciousness:
         affective_landscape = self._compute_affective_landscape(decision_state)
         environmental_dynamics = self._compute_environmental_dynamics(recent_memories)
         behavioral_fluidity = self._compute_behavioral_fluidity_markers(recent_memories)
+        biological_factors = self._compute_sensory_biological_proxies(recent_memories)
         distress_state = self._compute_distress_state(decision_state, affective_landscape, behavioral_fluidity)
         human_intent = self._compose_human_intent_logic(
             intentions=intentions,
@@ -921,6 +924,7 @@ class SyntheticConsciousness:
             affective_landscape=affective_landscape,
             environmental_dynamics=environmental_dynamics,
             behavioral_fluidity=behavioral_fluidity,
+            biological_factors=biological_factors,
             distress_state=distress_state
         )
         
@@ -1071,6 +1075,7 @@ class SyntheticConsciousness:
                                     affective_landscape: Dict[str, float],
                                     environmental_dynamics: Dict[str, float],
                                     behavioral_fluidity: Dict[str, float],
+                                    biological_factors: Dict[str, float],
                                     distress_state: Dict[str, float]) -> Dict[str, Any]:
         """Compose the full human-intent frame with who/why/when/how semantics"""
         focus_scores = {
@@ -1105,10 +1110,16 @@ class SyntheticConsciousness:
         despair = distress_state.get('desperation_index', 0.0)
         overload = distress_state.get('psychological_overload_risk', 0.0)
         paranoia = distress_state.get('paranoia_hypervigilance', 0.0)
+        bio_proxy_uncertainty = biological_factors.get('biological_proxy_uncertainty', 0.0)
+        high_bio_proxy_uncertainty = (
+            bio_proxy_uncertainty > HUMAN_INTENT_HIGH_BIOLOGICAL_UNCERTAINTY_THRESHOLD
+        )
         if pressure > HUMAN_INTENT_IMMEDIATE_PRESSURE_THRESHOLD:
             when = 'immediate'
         elif overload > 0.75:
             when = 'containment_required'
+        elif high_bio_proxy_uncertainty:
+            when = 'proxy_triangulation_window'
         elif paranoia > 0.7:
             when = 'safety_reassurance_window'
         elif despair > 0.75:
@@ -1126,6 +1137,8 @@ class SyntheticConsciousness:
             how = 'iterative_reassessment'
         elif overload > 0.75:
             how = 'deescalation_protocol'
+        elif high_bio_proxy_uncertainty:
+            how = 'biological_proxy_triangulation'
         elif paranoia > 0.7:
             how = 'grounding_and_reality_check'
         elif despair > 0.75:
@@ -1147,6 +1160,7 @@ class SyntheticConsciousness:
             'affective_landscape': affective_landscape,
             'environmental_dynamics': environmental_dynamics,
             'behavioral_fluidity': behavioral_fluidity,
+            'biological_factors': biological_factors,
             'distress_state': distress_state
         }
     
@@ -1421,6 +1435,124 @@ class SyntheticConsciousness:
             'sweat_response_intensity': sweat_response_intensity,
             'glance_misdirection_index': glance_misdirection_index,
             'overall_fidget_index': overall_fidget_index
+        }
+    
+    def _compute_sensory_biological_proxies(self, memories: List[Dict]) -> Dict[str, float]:
+        """Estimate coarse biological-style proxies from sensory patterns; heuristic only, not medical measurements"""
+        if not memories:
+            return {
+                'fingerprint_geometry_proxy': 0.0,
+                'skin_cell_turnover_proxy': 0.0,
+                'growth_factor_flux_proxy': 0.0,
+                'heartbeat_rhythm_coherence_proxy': 0.0,
+                'sensory_ventricular_pulse_pattern_proxy': 0.0,
+                'iris_micro_response_proxy': 0.0,
+                'sensory_renal_homeostasis_pattern_proxy': 0.0,
+                'biological_proxy_uncertainty': 0.0
+            }
+        
+        sensory_series = []
+        for memory in memories:
+            if isinstance(memory, dict) and memory.get('sensory_data') is not None:
+                sensor_array = np.asarray(memory['sensory_data'], dtype=float).reshape(-1)
+                if sensor_array.size > 0 and np.all(np.isfinite(sensor_array)):
+                    sensory_series.append(sensor_array)
+        
+        if not sensory_series:
+            return {
+                'fingerprint_geometry_proxy': 0.0,
+                'skin_cell_turnover_proxy': 0.0,
+                'growth_factor_flux_proxy': 0.0,
+                'heartbeat_rhythm_coherence_proxy': 0.0,
+                'sensory_ventricular_pulse_pattern_proxy': 0.0,
+                'iris_micro_response_proxy': 0.0,
+                'sensory_renal_homeostasis_pattern_proxy': 0.0,
+                'biological_proxy_uncertainty': 0.0
+            }
+        
+        stacked = np.vstack(sensory_series)
+        envelope = np.mean(stacked, axis=1)
+        
+        if stacked.shape[1] > 2:
+            spatial_delta = np.diff(stacked, axis=1)
+            fingerprint_geometry_proxy = float(np.clip(
+                np.std(spatial_delta) / (np.mean(np.abs(spatial_delta)) + EPSILON),
+                0.0, 1.0
+            ))
+        else:
+            fingerprint_geometry_proxy = 0.0
+        
+        if stacked.shape[0] > 2:
+            temporal_accel = np.diff(np.diff(stacked, axis=0), axis=0)
+            skin_cell_turnover_proxy = float(np.clip(np.mean(np.abs(temporal_accel)), 0.0, 1.0))
+        else:
+            skin_cell_turnover_proxy = 0.0
+        
+        if len(envelope) > 1:
+            growth_trend = np.maximum(np.diff(envelope), 0.0)
+            growth_factor_flux_proxy = float(np.clip(np.mean(growth_trend), 0.0, 1.0))
+        else:
+            growth_factor_flux_proxy = 0.0
+        
+        if len(envelope) > 4:
+            demeaned = envelope - np.mean(envelope)
+            autocorr = np.correlate(demeaned, demeaned, mode='full')[len(demeaned)-1:]
+            heartbeat_rhythm_coherence_proxy = float(np.clip(
+                np.max(np.abs(autocorr[1:])) / (np.abs(autocorr[0]) + EPSILON),
+                0.0, 1.0
+            ))
+            sensory_ventricular_pulse_pattern_proxy = float(np.clip(
+                1.0 / (1.0 + np.std(np.diff(envelope, n=2))),
+                0.0, 1.0
+            ))
+        else:
+            heartbeat_rhythm_coherence_proxy = 0.0
+            sensory_ventricular_pulse_pattern_proxy = 0.0
+        
+        centered = stacked - np.mean(stacked, axis=1, keepdims=True)
+        spectrum = np.abs(np.fft.rfft(centered, axis=1))
+        if spectrum.shape[1] > 3:
+            high_band = spectrum[:, (spectrum.shape[1] * 2) // 3:]
+            iris_micro_response_proxy = float(np.clip(
+                np.std(high_band) / (np.mean(high_band) + EPSILON),
+                0.0, 1.0
+            ))
+        else:
+            iris_micro_response_proxy = 0.0
+        
+        if len(envelope) >= 4:
+            smoothed = np.convolve(envelope, np.ones(3) / 3.0, mode='valid')
+            sensory_renal_homeostasis_pattern_proxy = float(np.clip(
+                1.0 / (1.0 + np.std(smoothed)),
+                0.0, 1.0
+            ))
+        else:
+            sensory_renal_homeostasis_pattern_proxy = 0.0
+        
+        # Equal weighting is intentional as a neutral baseline because these proxies are heuristic and uncalibrated.
+        # TODO: Calibrate per-proxy weights using labeled multimodal physiological benchmark data
+        # (e.g., rhythm/thermoregulatory ground truth), targeting improved calibration error and temporal stability.
+        proxy_composite = np.mean([
+            fingerprint_geometry_proxy,
+            skin_cell_turnover_proxy,
+            growth_factor_flux_proxy,
+            heartbeat_rhythm_coherence_proxy,
+            sensory_ventricular_pulse_pattern_proxy,
+            iris_micro_response_proxy,
+            sensory_renal_homeostasis_pattern_proxy
+        ])
+        # Inverse-confidence over proxy strength: higher means weaker/less coherent proxy signals.
+        biological_proxy_uncertainty = float(np.clip(1.0 - proxy_composite, 0.0, 1.0))
+        
+        return {
+            'fingerprint_geometry_proxy': fingerprint_geometry_proxy,
+            'skin_cell_turnover_proxy': skin_cell_turnover_proxy,
+            'growth_factor_flux_proxy': growth_factor_flux_proxy,
+            'heartbeat_rhythm_coherence_proxy': heartbeat_rhythm_coherence_proxy,
+            'sensory_ventricular_pulse_pattern_proxy': sensory_ventricular_pulse_pattern_proxy,
+            'iris_micro_response_proxy': iris_micro_response_proxy,
+            'sensory_renal_homeostasis_pattern_proxy': sensory_renal_homeostasis_pattern_proxy,
+            'biological_proxy_uncertainty': biological_proxy_uncertainty
         }
     
     def _compute_distress_state(self,
