@@ -13,6 +13,9 @@ from typing import Dict, List, Optional, Tuple, Any, Union, Callable
 from dataclasses import dataclass, field
 from enum import Enum, auto
 import asyncio
+import copy
+import json
+import os
 import quantum_computing as qc  # Simulated quantum interface
 from scipy.linalg import expm, sqrtm
 from scipy.special import jv, spherical_jn
@@ -89,6 +92,138 @@ BEHAVIOR_THROAT_BAND_END_RATIO = 2
 BEHAVIOR_TIC_BURST_PERCENTILE = 90
 BEHAVIOR_IMPULSIVITY_PERCENTILE = 95
 BEHAVIOR_GLANCE_SEGMENT_COUNT = 3
+
+DEFAULT_INTENT_CALIBRATION_VERSION = "intent-runtime-v1.0.0"
+DEFAULT_INTENT_CALIBRATION_PATH = os.path.join(
+    os.path.dirname(__file__),
+    "calibration",
+    "intent_runtime_calibration.v1.json"
+)
+
+DEFAULT_INTENT_CALIBRATION = {
+    "version": DEFAULT_INTENT_CALIBRATION_VERSION,
+    "calibration_context": {
+        "source_dataset": "synthetic_sensor_benchmark_v1",
+        "sampling_reference_hz": 50.0,
+        "exported_at_unix": 0.0
+    },
+    "routing_thresholds": {
+        "focus_detection_threshold": 0.2,
+        "immediate_pressure_threshold": 0.65,
+        "near_term_pressure_threshold": 0.35,
+        "high_indecision_threshold": 0.6,
+        "constrained_decision_pressure_threshold": 0.55,
+        "high_environmental_turbulence_threshold": 0.6,
+        "high_proxy_uncertainty_threshold": 0.7,
+        "high_data_quality_risk_threshold": 0.4,
+        "low_confidence_threshold": 0.35,
+        "exponential_surge_threshold": 0.82,
+        "max_intent_reasons": 2
+    },
+    "decision_weights": {
+        "fear": 0.35,
+        "anger": 0.2,
+        "anticipation": 0.15,
+        "indecision": 0.15,
+        "low_agency": 0.15
+    },
+    "affect_weights": {
+        "grief_base": 0.6,
+        "grief_fear": 0.4,
+        "love_base": 0.5,
+        "love_trust": 0.5,
+        "triumph_base": 0.7,
+        "triumph_commitment": 0.3,
+        "accomplishment_indecision_damping": 0.5
+    },
+    "distress_weights": {
+        "hopelessness_grief": 0.45,
+        "hopelessness_indecision": 0.3,
+        "hopelessness_low_commitment": 0.25,
+        "gut_pressure": 0.5,
+        "gut_fidget": 0.3,
+        "gut_sweat": 0.2,
+        "headache_pressure": 0.45,
+        "headache_throat": 0.35,
+        "headache_indecision": 0.2,
+        "dry_mouth_sweat": 0.55,
+        "dry_mouth_pressure": 0.25,
+        "dry_mouth_throat": 0.2
+    },
+    "binary_depth": {
+        "recursive_passes": 4,
+        "temporal_weight": 0.4,
+        "spatial_weight": 0.3,
+        "recursive_weight": 0.3,
+        "shift_base": 1,
+        "blend_factor": 0.5,
+        "std_boost_cap": 0.25
+    },
+    "proxy_weights": {
+        "signal_geometry_index": 1.0,
+        "temporal_drift_index": 1.0,
+        "positive_flux_index": 1.0,
+        "rhythmic_coherence_index": 1.0,
+        "pulse_stability_index": 1.0,
+        "high_frequency_response_index": 1.0,
+        "smooth_homeostasis_index": 1.0,
+        "binary_signature_depth_index": 1.0,
+        "identity_continuity_index": 1.0
+    },
+    "sensory_contract": {
+        "required_fields": [
+            "sensor_type",
+            "units",
+            "cadence_hz",
+            "quality_flags",
+            "missing_data_policy",
+            "values"
+        ],
+        "sensor_units": {
+            "audio": "Pa",
+            "motion": "m_s2",
+            "optical": "lux",
+            "temperature": "celsius",
+            "generic": "normalized"
+        },
+        "unit_normalization": {
+            "Pa": {"offset": 0.0, "scale": 1.0},
+            "m_s2": {"offset": 0.0, "scale": 20.0},
+            "lux": {"offset": 0.0, "scale": 1000.0},
+            "celsius": {"offset": 20.0, "scale": 15.0},
+            "normalized": {"offset": 0.0, "scale": 1.0}
+        },
+        "allowed_missing_data_policy": ["drop", "impute_zero", "forward_fill"],
+        "quality_flag_penalties": {
+            "saturated": 0.25,
+            "clipped": 0.2,
+            "noisy": 0.15,
+            "dropout": 0.3,
+            "stale": 0.2
+        },
+        "cadence_tolerance_ratio": 0.4,
+        "max_missing_ratio": 0.2
+    },
+    "acceptance_gates": {
+        "max_expected_calibration_error": 0.05,
+        "min_precision": 0.75,
+        "min_recall": 0.75,
+        "min_f1": 0.75,
+        "max_false_alarm_rate": 0.1,
+        "max_temporal_drift_std": 0.1,
+        "max_noise_dropout_robustness_delta": 0.15
+    }
+}
+
+
+def _deep_update_dict(base: Dict[str, Any], updates: Dict[str, Any]) -> Dict[str, Any]:
+    """Recursively update nested dict values."""
+    for key, value in updates.items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            _deep_update_dict(base[key], value)
+        else:
+            base[key] = value
+    return base
 
 # Q-CTRL Integration
 class QCTRLOptimizer:
@@ -496,12 +631,35 @@ class SyntheticConsciousness:
     
     def __init__(self, dimension: int = 1024):
         self.dimension = dimension
+        self.intent_calibration = self._load_intent_calibration()
+        self.intent_calibration_version = self.intent_calibration.get("version", "unknown")
         self.consciousness_state = self._initialize_consciousness()
         self.memory_buffer = deque(maxlen=10000)
         self.attention_matrix = np.eye(dimension)
         self.emotional_state = np.zeros(8)  # 8 basic emotions
         self.self_model = self._initialize_self_model()
         self.creativity_engine = self._initialize_creativity()
+        self.last_intent_trace: Dict[str, Any] = {}
+
+    def _load_intent_calibration(self) -> Dict[str, Any]:
+        """Load versioned intent calibration artifact and merge with safe defaults."""
+        calibration = copy.deepcopy(DEFAULT_INTENT_CALIBRATION)
+        configured_path = os.environ.get("NIA_INTENT_CALIBRATION_PATH", DEFAULT_INTENT_CALIBRATION_PATH)
+        if os.path.isfile(configured_path):
+            try:
+                with open(configured_path, "r", encoding="utf-8") as handle:
+                    external = json.load(handle)
+                if isinstance(external, dict):
+                    calibration = _deep_update_dict(calibration, external)
+            except (OSError, json.JSONDecodeError, TypeError, ValueError):
+                # Keep defaults if artifact cannot be read or parsed safely.
+                pass
+        return calibration
+
+    def _weights_sum(self, weights: Dict[str, float]) -> float:
+        """Compute weight sums safely for normalization."""
+        finite_values = [float(v) for v in weights.values() if np.isfinite(v)]
+        return float(np.sum(finite_values)) if finite_values else 0.0
         
     def _initialize_consciousness(self) -> np.ndarray:
         """Initialize quantum-inspired consciousness state"""
@@ -1031,13 +1189,23 @@ class SyntheticConsciousness:
         commitment = float(np.clip(np.abs(direction).max(), 0.0, 1.0))
         indecision = float(1.0 - commitment)
         
+        decision_weights = self.intent_calibration.get("decision_weights", {})
         _, _, anger, fear, _, _, _, anticipation = self.emotional_state
+        fear_w = float(decision_weights.get("fear", DECISION_PRESSURE_FEAR_WEIGHT))
+        anger_w = float(decision_weights.get("anger", DECISION_PRESSURE_ANGER_WEIGHT))
+        anticipation_w = float(decision_weights.get("anticipation", DECISION_PRESSURE_ANTICIPATION_WEIGHT))
+        indecision_w = float(decision_weights.get("indecision", DECISION_PRESSURE_INDECISION_WEIGHT))
+        low_agency_w = float(decision_weights.get("low_agency", DECISION_PRESSURE_LOW_AGENCY_WEIGHT))
+        weight_sum = fear_w + anger_w + anticipation_w + indecision_w + low_agency_w + EPSILON
+
         pressure = float(np.clip(
-            DECISION_PRESSURE_FEAR_WEIGHT * fear +
-            DECISION_PRESSURE_ANGER_WEIGHT * anger +
-            DECISION_PRESSURE_ANTICIPATION_WEIGHT * anticipation +
-            DECISION_PRESSURE_INDECISION_WEIGHT * indecision +
-            DECISION_PRESSURE_LOW_AGENCY_WEIGHT * (1.0 - agency),
+            (
+                fear_w * fear +
+                anger_w * anger +
+                anticipation_w * anticipation +
+                indecision_w * indecision +
+                low_agency_w * (1.0 - agency)
+            ) / weight_sum,
             0.0, 1.0
         ))
         
@@ -1052,23 +1220,33 @@ class SyntheticConsciousness:
         joy, sadness, _, fear, _, _, trust, anticipation = self.emotional_state
         commitment = decision_state.get('commitment', 0.0)
         indecision = decision_state.get('indecision', 0.0)
+        affect_weights = self.intent_calibration.get("affect_weights", {})
+        grief_base = float(affect_weights.get("grief_base", AFFECT_GRIEF_BASE_WEIGHT))
+        grief_fear = float(affect_weights.get("grief_fear", AFFECT_GRIEF_FEAR_WEIGHT))
+        love_base = float(affect_weights.get("love_base", AFFECT_LOVE_BASE_WEIGHT))
+        love_trust = float(affect_weights.get("love_trust", AFFECT_LOVE_TRUST_WEIGHT))
+        triumph_base = float(affect_weights.get("triumph_base", AFFECT_TRIUMPH_BASE_WEIGHT))
+        triumph_commitment = float(affect_weights.get("triumph_commitment", AFFECT_TRIUMPH_COMMITMENT_WEIGHT))
+        accomplishment_damping = float(
+            affect_weights.get("accomplishment_indecision_damping", AFFECT_ACCOMPLISHMENT_INDECISION_DAMPING)
+        )
         
         # Grief increases with sadness and is amplified by fear of irreversible loss.
         grief_of_loss = float(np.clip(
-            sadness * (AFFECT_GRIEF_BASE_WEIGHT + AFFECT_GRIEF_FEAR_WEIGHT * fear), 0.0, 1.0
+            sadness * (grief_base + grief_fear * fear), 0.0, 1.0
         ))
         # Love-linked joy is modeled as joy reinforced by trust.
         joy_of_love = float(np.clip(
-            joy * (AFFECT_LOVE_BASE_WEIGHT + AFFECT_LOVE_TRUST_WEIGHT * trust), 0.0, 1.0
+            joy * (love_base + love_trust * trust), 0.0, 1.0
         ))
         # Triumph emerges from joy + anticipation, then strengthens with commitment.
         triumph_of_achievement = float(np.clip(
-            joy * anticipation * (AFFECT_TRIUMPH_BASE_WEIGHT + AFFECT_TRIUMPH_COMMITMENT_WEIGHT * commitment),
+            joy * anticipation * (triumph_base + triumph_commitment * commitment),
             0.0, 1.0
         ))
         # Accomplishment happiness rises with commitment but is dampened by indecision.
         happiness_of_accomplishment = float(np.clip(
-            joy * commitment * (1.0 - AFFECT_ACCOMPLISHMENT_INDECISION_DAMPING * indecision),
+            joy * commitment * (1.0 - accomplishment_damping * indecision),
             0.0, 1.0
         ))
         
@@ -1089,6 +1267,39 @@ class SyntheticConsciousness:
                                     biological_factors: Dict[str, float],
                                     distress_state: Dict[str, float]) -> Dict[str, Any]:
         """Compose the full human-intent frame with who/why/when/how semantics"""
+        routing_thresholds = self.intent_calibration.get("routing_thresholds", {})
+        focus_threshold = float(routing_thresholds.get("focus_detection_threshold", HUMAN_INTENT_FOCUS_DETECTION_THRESHOLD))
+        immediate_pressure_threshold = float(
+            routing_thresholds.get("immediate_pressure_threshold", HUMAN_INTENT_IMMEDIATE_PRESSURE_THRESHOLD)
+        )
+        near_term_pressure_threshold = float(
+            routing_thresholds.get("near_term_pressure_threshold", HUMAN_INTENT_NEAR_TERM_PRESSURE_THRESHOLD)
+        )
+        high_indecision_threshold = float(
+            routing_thresholds.get("high_indecision_threshold", HUMAN_INTENT_HIGH_INDECISION_THRESHOLD)
+        )
+        constrained_pressure_threshold = float(
+            routing_thresholds.get(
+                "constrained_decision_pressure_threshold",
+                HUMAN_INTENT_CONSTRAINED_DECISION_PRESSURE_THRESHOLD
+            )
+        )
+        high_turbulence_threshold = float(
+            routing_thresholds.get(
+                "high_environmental_turbulence_threshold",
+                HUMAN_INTENT_HIGH_ENVIRONMENTAL_TURBULENCE_THRESHOLD
+            )
+        )
+        high_proxy_uncertainty_threshold = float(
+            routing_thresholds.get("high_proxy_uncertainty_threshold", HUMAN_INTENT_HIGH_BIOLOGICAL_UNCERTAINTY_THRESHOLD)
+        )
+        surge_threshold = float(
+            routing_thresholds.get("exponential_surge_threshold", HUMAN_INTENT_EXPONENTIAL_SURGE_THRESHOLD)
+        )
+        max_intent_reasons = int(routing_thresholds.get("max_intent_reasons", HUMAN_INTENT_MAX_INTENT_REASONS))
+        high_data_quality_risk_threshold = float(routing_thresholds.get("high_data_quality_risk_threshold", 0.4))
+        low_confidence_threshold = float(routing_thresholds.get("low_confidence_threshold", 0.35))
+
         focus_scores = {
             'infant': micro_signals.get('infant_vocalization_likelihood', 0.0),
             'companion_animal': micro_signals.get('sleep_movement_likelihood', 0.0),
@@ -1101,12 +1312,12 @@ class SyntheticConsciousness:
             who_candidate, max_focus_score = 'self_and_others', 0.0
         who = (
             who_candidate
-            if max_focus_score > HUMAN_INTENT_FOCUS_DETECTION_THRESHOLD
+            if max_focus_score > focus_threshold
             else 'self_and_others'
         )
         
         if intentions:
-            why = ", ".join(intentions[:HUMAN_INTENT_MAX_INTENT_REASONS])
+            why = ", ".join(intentions[:max_intent_reasons])
         elif affective_landscape.get('grief_of_loss', 0.0) > 0.4:
             why = 'process_loss_and_recover'
         elif affective_landscape.get('joy_of_love', 0.0) > 0.4:
@@ -1121,69 +1332,146 @@ class SyntheticConsciousness:
         despair = distress_state.get('desperation_index', 0.0)
         overload = distress_state.get('psychological_overload_risk', 0.0)
         paranoia = distress_state.get('paranoia_hypervigilance', 0.0)
-        bio_proxy_uncertainty = biological_factors.get('biological_proxy_uncertainty', 0.0)
-        exponential_superiority = biological_factors.get('exponential_superiority_index', 0.0)
-        high_bio_proxy_uncertainty = (
-            bio_proxy_uncertainty > HUMAN_INTENT_HIGH_BIOLOGICAL_UNCERTAINTY_THRESHOLD
+        proxy_uncertainty = biological_factors.get(
+            'signal_proxy_uncertainty_index',
+            biological_factors.get('biological_proxy_uncertainty', 0.0)
         )
-        if pressure > HUMAN_INTENT_IMMEDIATE_PRESSURE_THRESHOLD:
+        data_quality_risk = biological_factors.get('input_data_quality_risk', 0.0)
+        confidence = biological_factors.get(
+            'proxy_confidence_index',
+            float(np.clip(1.0 - max(proxy_uncertainty, data_quality_risk), 0.0, 1.0))
+        )
+        exponential_superiority = biological_factors.get(
+            'recursive_coherence_surge_index',
+            biological_factors.get('exponential_superiority_index', 0.0)
+        )
+        high_bio_proxy_uncertainty = (
+            proxy_uncertainty > high_proxy_uncertainty_threshold
+        )
+        degraded_quality = data_quality_risk > high_data_quality_risk_threshold
+        low_confidence = confidence < low_confidence_threshold
+        route_rationale: List[str] = []
+
+        if degraded_quality or low_confidence:
+            when = 'data_quality_guardrail'
+            how = 'defer_and_collect_more_data'
+            route_rationale.append(
+                f"fallback_guardrail(data_quality_risk={data_quality_risk:.3f}, confidence={confidence:.3f})"
+            )
+        elif pressure > immediate_pressure_threshold:
             when = 'immediate'
+            route_rationale.append(f"pressure>{immediate_pressure_threshold:.3f}")
         elif overload > 0.75:
             when = 'containment_required'
+            route_rationale.append("overload>0.75")
         elif (
-            exponential_superiority > HUMAN_INTENT_EXPONENTIAL_SURGE_THRESHOLD
+            exponential_superiority > surge_threshold
             and not high_bio_proxy_uncertainty
         ):
             when = 'exponential_surge_window'
+            route_rationale.append(
+                f"surge>{surge_threshold:.3f} and uncertainty<{high_proxy_uncertainty_threshold:.3f}"
+            )
         elif high_bio_proxy_uncertainty:
             when = 'proxy_triangulation_window'
+            route_rationale.append(f"proxy_uncertainty>{high_proxy_uncertainty_threshold:.3f}")
         elif paranoia > 0.7:
             when = 'safety_reassurance_window'
+            route_rationale.append("paranoia>0.7")
         elif despair > 0.75:
             when = 'acute_crisis_window'
-        elif environmental_turbulence > HUMAN_INTENT_HIGH_ENVIRONMENTAL_TURBULENCE_THRESHOLD:
+            route_rationale.append("despair>0.75")
+        elif environmental_turbulence > high_turbulence_threshold:
             when = 'continuous_adaptive'
+            route_rationale.append(f"turbulence>{high_turbulence_threshold:.3f}")
         elif fidget_index > 0.6:
             when = 'micro_reactive'
-        elif pressure > HUMAN_INTENT_NEAR_TERM_PRESSURE_THRESHOLD:
+            route_rationale.append("fidget>0.6")
+        elif pressure > near_term_pressure_threshold:
             when = 'near_term'
+            route_rationale.append(f"pressure>{near_term_pressure_threshold:.3f}")
         else:
             when = 'reflective_window'
-        
-        if indecision > HUMAN_INTENT_HIGH_INDECISION_THRESHOLD:
+            route_rationale.append("default_reflective")
+
+        if degraded_quality or low_confidence:
+            how = 'defer_and_collect_more_data'
+        elif indecision > high_indecision_threshold:
             how = 'iterative_reassessment'
+            route_rationale.append(f"indecision>{high_indecision_threshold:.3f}")
         elif overload > 0.75:
             how = 'deescalation_protocol'
+            route_rationale.append("overload>0.75")
         elif (
-            exponential_superiority > HUMAN_INTENT_EXPONENTIAL_SURGE_THRESHOLD
+            exponential_superiority > surge_threshold
             and not high_bio_proxy_uncertainty
         ):
             how = 'recursive_binary_intent_lock'
+            route_rationale.append(
+                f"surge>{surge_threshold:.3f} and uncertainty<{high_proxy_uncertainty_threshold:.3f}"
+            )
         elif high_bio_proxy_uncertainty:
-            how = 'biological_proxy_triangulation'
+            how = 'signal_proxy_triangulation'
+            route_rationale.append(f"proxy_uncertainty>{high_proxy_uncertainty_threshold:.3f}")
         elif paranoia > 0.7:
             how = 'grounding_and_reality_check'
+            route_rationale.append("paranoia>0.7")
         elif despair > 0.75:
             how = 'stabilize_and_reduce_overload'
+            route_rationale.append("despair>0.75")
         elif fidget_index > 0.65:
             how = 'somatic_regulation_loop'
-        elif pressure > HUMAN_INTENT_CONSTRAINED_DECISION_PRESSURE_THRESHOLD:
+            route_rationale.append("fidget>0.65")
+        elif pressure > constrained_pressure_threshold:
             how = 'constrained_decision_making'
+            route_rationale.append(f"pressure>{constrained_pressure_threshold:.3f}")
         else:
             how = 'deliberate_confident_action'
+            route_rationale.append("default_deliberate")
+
+        threshold_trace = {
+            "focus_detection_threshold": focus_threshold,
+            "immediate_pressure_threshold": immediate_pressure_threshold,
+            "near_term_pressure_threshold": near_term_pressure_threshold,
+            "high_indecision_threshold": high_indecision_threshold,
+            "high_proxy_uncertainty_threshold": high_proxy_uncertainty_threshold,
+            "high_data_quality_risk_threshold": high_data_quality_risk_threshold,
+            "low_confidence_threshold": low_confidence_threshold,
+            "exponential_surge_threshold": surge_threshold
+        }
+        self.last_intent_trace = {
+            "calibration_version": self.intent_calibration_version,
+            "thresholds": threshold_trace,
+            "inputs": {
+                "pressure": float(pressure),
+                "indecision": float(indecision),
+                "environmental_turbulence": float(environmental_turbulence),
+                "fidget_index": float(fidget_index),
+                "despair": float(despair),
+                "overload": float(overload),
+                "paranoia": float(paranoia),
+                "proxy_uncertainty": float(proxy_uncertainty),
+                "data_quality_risk": float(data_quality_risk),
+                "confidence": float(confidence),
+                "recursive_coherence_surge_index": float(exponential_superiority)
+            },
+            "rationale": route_rationale
+        }
         
         return {
             'who': who,
             'why': why,
             'when': when,
             'how': how,
+            'confidence': float(confidence),
             'micro_signals': micro_signals,
             'decision_state': decision_state,
             'affective_landscape': affective_landscape,
             'environmental_dynamics': environmental_dynamics,
             'behavioral_fluidity': behavioral_fluidity,
             'biological_factors': biological_factors,
-            'distress_state': distress_state
+            'distress_state': distress_state,
+            'traceability': self.last_intent_trace
         }
     
     def _compute_environmental_dynamics(self, memories: List[Dict]) -> Dict[str, float]:
@@ -1459,119 +1747,217 @@ class SyntheticConsciousness:
             'overall_fidget_index': overall_fidget_index
         }
     
-    def _compute_sensory_biological_proxies(self, memories: List[Dict]) -> Dict[str, float]:
-        """Estimate coarse biological-style proxies from sensory patterns; heuristic only, not medical measurements"""
-        if not memories:
-            return {
-                'fingerprint_geometry_proxy': 0.0,
-                'skin_cell_turnover_proxy': 0.0,
-                'growth_factor_flux_proxy': 0.0,
-                'heartbeat_rhythm_coherence_proxy': 0.0,
-                'sensory_ventricular_pulse_pattern_proxy': 0.0,
-                'iris_micro_response_proxy': 0.0,
-                'sensory_renal_homeostasis_pattern_proxy': 0.0,
-                'natural_binary_signature_depth': 0.0,
-                'temporal_binary_resonance': 0.0,
-                'identity_continuity_index': 0.0,
-                'exponential_superiority_index': 0.0,
-                'biological_proxy_uncertainty': 0.0
-            }
-        
-        sensory_series = []
+    def _empty_signal_proxy_indices(self) -> Dict[str, float]:
+        """Return zeroed proxy outputs with legacy-compatible aliases."""
+        return {
+            'signal_geometry_index': 0.0,
+            'temporal_drift_index': 0.0,
+            'positive_flux_index': 0.0,
+            'rhythmic_coherence_index': 0.0,
+            'pulse_stability_index': 0.0,
+            'high_frequency_response_index': 0.0,
+            'smooth_homeostasis_index': 0.0,
+            'binary_signature_depth_index': 0.0,
+            'temporal_binary_resonance': 0.0,
+            'identity_continuity_index': 0.0,
+            'recursive_coherence_surge_index': 0.0,
+            'signal_proxy_uncertainty_index': 0.0,
+            'input_data_quality_risk': 1.0,
+            'proxy_confidence_index': 0.0,
+            # Backward-compatible aliases
+            'fingerprint_geometry_proxy': 0.0,
+            'skin_cell_turnover_proxy': 0.0,
+            'growth_factor_flux_proxy': 0.0,
+            'heartbeat_rhythm_coherence_proxy': 0.0,
+            'sensory_ventricular_pulse_pattern_proxy': 0.0,
+            'iris_micro_response_proxy': 0.0,
+            'sensory_renal_homeostasis_pattern_proxy': 0.0,
+            'natural_binary_signature_depth': 0.0,
+            'exponential_superiority_index': 0.0,
+            'biological_proxy_uncertainty': 0.0,
+            'contract_valid_samples': 0.0
+        }
+
+    def _extract_sensory_contract_series(self, memories: List[Dict]) -> Tuple[List[np.ndarray], float, float, float]:
+        """Extract normalized sensory arrays under explicit data contract."""
+        contract = self.intent_calibration.get("sensory_contract", {})
+        required_fields = set(contract.get("required_fields", []))
+        sensor_units = contract.get("sensor_units", {})
+        unit_norm = contract.get("unit_normalization", {})
+        quality_penalties = contract.get("quality_flag_penalties", {})
+        allowed_missing_policy = set(contract.get("allowed_missing_data_policy", []))
+        cadence_reference_hz = float(
+            self.intent_calibration.get("calibration_context", {}).get("sampling_reference_hz", 50.0)
+        )
+        cadence_tolerance = float(contract.get("cadence_tolerance_ratio", 0.4))
+        max_missing_ratio = float(contract.get("max_missing_ratio", 0.2))
+
+        sensory_series: List[np.ndarray] = []
+        quality_scores: List[float] = []
+        cadence_scores: List[float] = []
+        missing_ratios: List[float] = []
+
         for memory in memories:
-            if isinstance(memory, dict) and memory.get('sensory_data') is not None:
-                sensor_array = np.asarray(memory['sensory_data'], dtype=float).reshape(-1)
-                if sensor_array.size > 0 and np.all(np.isfinite(sensor_array)):
-                    sensory_series.append(sensor_array)
-        
+            if not isinstance(memory, dict):
+                continue
+            raw_payload = memory.get('sensory_data')
+            if raw_payload is None:
+                continue
+
+            if isinstance(raw_payload, dict):
+                if required_fields and not required_fields.issubset(raw_payload.keys()):
+                    continue
+                sensor_type = str(raw_payload.get("sensor_type", "generic"))
+                units = str(raw_payload.get("units", sensor_units.get(sensor_type, "normalized")))
+                cadence_hz = float(raw_payload.get("cadence_hz", cadence_reference_hz))
+                quality_flags = raw_payload.get("quality_flags", [])
+                missing_policy = str(raw_payload.get("missing_data_policy", "drop"))
+                values = raw_payload.get("values", [])
+                if missing_policy not in allowed_missing_policy and allowed_missing_policy:
+                    continue
+                expected_unit = sensor_units.get(sensor_type, units)
+                if units != expected_unit:
+                    continue
+            else:
+                # Legacy fallback keeps old behavior but marks lower confidence.
+                sensor_type = "generic"
+                units = "normalized"
+                cadence_hz = cadence_reference_hz
+                quality_flags = ["legacy_unstructured_payload"]
+                missing_policy = "drop"
+                values = raw_payload
+
+            sensor_array = np.asarray(values, dtype=float).reshape(-1)
+            if sensor_array.size == 0:
+                continue
+            finite_mask = np.isfinite(sensor_array)
+            finite_ratio = float(np.mean(finite_mask))
+            missing_ratio = float(1.0 - finite_ratio)
+
+            if missing_ratio > max_missing_ratio:
+                continue
+            if missing_policy == "drop":
+                sensor_array = sensor_array[finite_mask]
+            elif missing_policy == "impute_zero":
+                sensor_array = np.where(finite_mask, sensor_array, 0.0)
+            elif missing_policy == "forward_fill":
+                if not np.any(finite_mask):
+                    continue
+                last = 0.0
+                filled = []
+                for value, finite in zip(sensor_array, finite_mask):
+                    if finite:
+                        last = float(value)
+                    filled.append(last)
+                sensor_array = np.asarray(filled, dtype=float)
+
+            if sensor_array.size == 0 or not np.all(np.isfinite(sensor_array)):
+                continue
+
+            norm_spec = unit_norm.get(units, {"offset": 0.0, "scale": 1.0})
+            offset = float(norm_spec.get("offset", 0.0))
+            scale = float(norm_spec.get("scale", 1.0))
+            if abs(scale) < EPSILON:
+                scale = 1.0
+            sensor_array = (sensor_array - offset) / scale
+
+            cadence_delta_ratio = abs(cadence_hz - cadence_reference_hz) / (cadence_reference_hz + EPSILON)
+            cadence_score = float(np.clip(1.0 - cadence_delta_ratio / (cadence_tolerance + EPSILON), 0.0, 1.0))
+            quality_penalty = float(
+                np.sum([float(quality_penalties.get(str(flag), 0.0)) for flag in quality_flags])
+            )
+            quality_score = float(np.clip(1.0 - quality_penalty, 0.0, 1.0))
+
+            sensory_series.append(sensor_array)
+            quality_scores.append(quality_score)
+            cadence_scores.append(cadence_score)
+            missing_ratios.append(missing_ratio)
+
         if not sensory_series:
-            return {
-                'fingerprint_geometry_proxy': 0.0,
-                'skin_cell_turnover_proxy': 0.0,
-                'growth_factor_flux_proxy': 0.0,
-                'heartbeat_rhythm_coherence_proxy': 0.0,
-                'sensory_ventricular_pulse_pattern_proxy': 0.0,
-                'iris_micro_response_proxy': 0.0,
-                'sensory_renal_homeostasis_pattern_proxy': 0.0,
-                'natural_binary_signature_depth': 0.0,
-                'temporal_binary_resonance': 0.0,
-                'identity_continuity_index': 0.0,
-                'exponential_superiority_index': 0.0,
-                'biological_proxy_uncertainty': 0.0
-            }
-        
-        stacked = np.vstack(sensory_series)
+            return [], 0.0, 0.0, 1.0
+        quality_mean = float(np.mean(quality_scores)) if quality_scores else 0.0
+        cadence_mean = float(np.mean(cadence_scores)) if cadence_scores else 0.0
+        missing_mean = float(np.mean(missing_ratios)) if missing_ratios else 1.0
+        return sensory_series, quality_mean, cadence_mean, missing_mean
+
+    def _compute_sensory_biological_proxies(self, memories: List[Dict]) -> Dict[str, float]:
+        """Estimate calibrated signal-quality and behavior-state indices from contract-bound sensory data."""
+        if not memories:
+            return self._empty_signal_proxy_indices()
+
+        sensory_series, quality_mean, cadence_mean, missing_mean = self._extract_sensory_contract_series(memories)
+        if not sensory_series:
+            return self._empty_signal_proxy_indices()
+
+        min_width = min(len(series) for series in sensory_series)
+        if min_width <= 0:
+            return self._empty_signal_proxy_indices()
+        stacked = np.vstack([series[:min_width] for series in sensory_series])
         envelope = np.mean(stacked, axis=1)
-        
+
         if stacked.shape[1] > 2:
             spatial_delta = np.diff(stacked, axis=1)
-            fingerprint_geometry_proxy = float(np.clip(
+            signal_geometry_index = float(np.clip(
                 np.std(spatial_delta) / (np.mean(np.abs(spatial_delta)) + EPSILON),
                 0.0, 1.0
             ))
         else:
-            fingerprint_geometry_proxy = 0.0
-        
+            signal_geometry_index = 0.0
+
         if stacked.shape[0] > 2:
             temporal_accel = np.diff(np.diff(stacked, axis=0), axis=0)
-            skin_cell_turnover_proxy = float(np.clip(np.mean(np.abs(temporal_accel)), 0.0, 1.0))
+            temporal_drift_index = float(np.clip(np.mean(np.abs(temporal_accel)), 0.0, 1.0))
         else:
-            skin_cell_turnover_proxy = 0.0
-        
+            temporal_drift_index = 0.0
+
         if len(envelope) > 1:
             growth_trend = np.maximum(np.diff(envelope), 0.0)
-            growth_factor_flux_proxy = float(np.clip(np.mean(growth_trend), 0.0, 1.0))
+            positive_flux_index = float(np.clip(np.mean(growth_trend), 0.0, 1.0))
         else:
-            growth_factor_flux_proxy = 0.0
-        
+            positive_flux_index = 0.0
+
         if len(envelope) > 4:
             demeaned = envelope - np.mean(envelope)
             autocorr = np.correlate(demeaned, demeaned, mode='full')[len(demeaned)-1:]
-            heartbeat_rhythm_coherence_proxy = float(np.clip(
+            rhythmic_coherence_index = float(np.clip(
                 np.max(np.abs(autocorr[1:])) / (np.abs(autocorr[0]) + EPSILON),
                 0.0, 1.0
             ))
-            sensory_ventricular_pulse_pattern_proxy = float(np.clip(
+            pulse_stability_index = float(np.clip(
                 1.0 / (1.0 + np.std(np.diff(envelope, n=2))),
                 0.0, 1.0
             ))
         else:
-            heartbeat_rhythm_coherence_proxy = 0.0
-            sensory_ventricular_pulse_pattern_proxy = 0.0
-        
+            rhythmic_coherence_index = 0.0
+            pulse_stability_index = 0.0
+
         centered = stacked - np.mean(stacked, axis=1, keepdims=True)
         spectrum = np.abs(np.fft.rfft(centered, axis=1))
         if spectrum.shape[1] > 3:
             high_band = spectrum[:, (spectrum.shape[1] * 2) // 3:]
-            iris_micro_response_proxy = float(np.clip(
+            high_frequency_response_index = float(np.clip(
                 np.std(high_band) / (np.mean(high_band) + EPSILON),
                 0.0, 1.0
             ))
         else:
-            iris_micro_response_proxy = 0.0
-        
+            high_frequency_response_index = 0.0
+
         if len(envelope) >= 4:
             smoothed = np.convolve(envelope, np.ones(3) / 3.0, mode='valid')
-            sensory_renal_homeostasis_pattern_proxy = float(np.clip(
+            smooth_homeostasis_index = float(np.clip(
                 1.0 / (1.0 + np.std(smoothed)),
                 0.0, 1.0
             ))
         else:
-            sensory_renal_homeostasis_pattern_proxy = 0.0
+            smooth_homeostasis_index = 0.0
 
         row_medians = np.median(stacked, axis=1, keepdims=True)
         binary_signature = (stacked > row_medians).astype(float)
 
         if binary_signature.shape[0] > 1:
             temporal_bit_flip = np.mean(np.abs(np.diff(binary_signature, axis=0)), axis=1)
-            temporal_binary_resonance = float(np.clip(
-                1.0 - np.mean(temporal_bit_flip),
-                0.0, 1.0
-            ))
-            identity_continuity_index = float(np.clip(
-                1.0 - np.std(temporal_bit_flip),
-                0.0, 1.0
-            ))
+            temporal_binary_resonance = float(np.clip(1.0 - np.mean(temporal_bit_flip), 0.0, 1.0))
+            identity_continuity_index = float(np.clip(1.0 - np.std(temporal_bit_flip), 0.0, 1.0))
         else:
             temporal_binary_resonance = 0.0
             identity_continuity_index = 0.0
@@ -1582,74 +1968,99 @@ class SyntheticConsciousness:
         else:
             spatial_order = 0.0
 
+        binary_depth_cfg = self.intent_calibration.get("binary_depth", {})
+        recursive_passes = int(binary_depth_cfg.get("recursive_passes", BINARY_DEPTH_RECURSIVE_PASSES))
+        temporal_weight = float(binary_depth_cfg.get("temporal_weight", BINARY_DEPTH_TEMPORAL_WEIGHT))
+        spatial_weight = float(binary_depth_cfg.get("spatial_weight", BINARY_DEPTH_SPATIAL_WEIGHT))
+        recursive_weight = float(binary_depth_cfg.get("recursive_weight", BINARY_DEPTH_RECURSIVE_WEIGHT))
+        shift_base = int(binary_depth_cfg.get("shift_base", BINARY_DEPTH_SHIFT_BASE))
+        blend_factor = float(binary_depth_cfg.get("blend_factor", BINARY_DEPTH_BLEND_FACTOR))
+        std_boost_cap = float(binary_depth_cfg.get("std_boost_cap", BINARY_DEPTH_STD_BOOST_CAP))
+
         recursive_scores = []
         recursion_state = binary_signature.copy()
-        blend_complement = 1.0 - BINARY_DEPTH_BLEND_FACTOR
-        for i in range(BINARY_DEPTH_RECURSIVE_PASSES):
-            shifted = np.roll(recursion_state, shift=i + BINARY_DEPTH_SHIFT_BASE, axis=1)
+        blend_complement = 1.0 - blend_factor
+        for i in range(max(recursive_passes, 0)):
+            shifted = np.roll(recursion_state, shift=i + shift_base, axis=1)
             coherence = 1.0 - np.mean(np.abs(recursion_state - shifted))
             coherence = float(np.clip(coherence, 0.0, 1.0))
             recursive_scores.append(coherence)
-            recursion_state = (
-                BINARY_DEPTH_BLEND_FACTOR * recursion_state +
-                blend_complement * shifted
-            )
+            recursion_state = blend_factor * recursion_state + blend_complement * shifted
 
         recursive_depth = float(np.mean(recursive_scores)) if recursive_scores else 0.0
-        natural_binary_signature_depth = float(np.clip(
-            BINARY_DEPTH_TEMPORAL_WEIGHT * temporal_binary_resonance +
-            BINARY_DEPTH_SPATIAL_WEIGHT * spatial_order +
-            BINARY_DEPTH_RECURSIVE_WEIGHT * recursive_depth,
+        binary_signature_depth_index = float(np.clip(
+            temporal_weight * temporal_binary_resonance +
+            spatial_weight * spatial_order +
+            recursive_weight * recursive_depth,
             0.0, 1.0
         ))
-        # Exponential superiority is modeled as average recursive coherence boosted by bounded
-        # dispersion (capped std): stronger mean coherence is primary, while non-zero dispersion
-        # indicates robust structure persists across multiple shift scales rather than a single mode.
-        exponential_superiority_index = float(np.clip(
-            np.mean(recursive_scores) * (1.0 + min(np.std(recursive_scores), BINARY_DEPTH_STD_BOOST_CAP)),
+        recursive_coherence_surge_index = float(np.clip(
+            np.mean(recursive_scores) * (1.0 + min(np.std(recursive_scores), std_boost_cap)),
             0.0, 1.0
         )) if recursive_scores else 0.0
-        
-        # Equal weighting is intentional as a neutral baseline because these proxies are heuristic and uncalibrated.
-        # TODO: Calibrate per-proxy weights using labeled multimodal benchmark data
-        # and target expected calibration error (ECE) <= 0.05 with week-scale temporal drift <= 0.1 std.
-        # Composite intentionally excludes temporal_binary_resonance and exponential_superiority_index
-        # to avoid direct + derived double-counting from the same recursive binary signals.
-        proxy_values = np.array([
-            fingerprint_geometry_proxy,
-            skin_cell_turnover_proxy,
-            growth_factor_flux_proxy,
-            heartbeat_rhythm_coherence_proxy,
-            sensory_ventricular_pulse_pattern_proxy,
-            iris_micro_response_proxy,
-            sensory_renal_homeostasis_pattern_proxy,
-            natural_binary_signature_depth,
-            identity_continuity_index
-        ], dtype=float)
-        proxy_composite = float(np.mean(proxy_values))
-        # Inverse-confidence over proxy strength: higher means weaker/less coherent proxy signals.
-        biological_proxy_uncertainty = float(np.clip(1.0 - proxy_composite, 0.0, 1.0))
-        
-        return {
-            'fingerprint_geometry_proxy': fingerprint_geometry_proxy,
-            'skin_cell_turnover_proxy': skin_cell_turnover_proxy,
-            'growth_factor_flux_proxy': growth_factor_flux_proxy,
-            'heartbeat_rhythm_coherence_proxy': heartbeat_rhythm_coherence_proxy,
-            'sensory_ventricular_pulse_pattern_proxy': sensory_ventricular_pulse_pattern_proxy,
-            'iris_micro_response_proxy': iris_micro_response_proxy,
-            'sensory_renal_homeostasis_pattern_proxy': sensory_renal_homeostasis_pattern_proxy,
-            'natural_binary_signature_depth': natural_binary_signature_depth,
+
+        proxy_weight_cfg = self.intent_calibration.get("proxy_weights", {})
+        proxy_vector = {
+            'signal_geometry_index': signal_geometry_index,
+            'temporal_drift_index': temporal_drift_index,
+            'positive_flux_index': positive_flux_index,
+            'rhythmic_coherence_index': rhythmic_coherence_index,
+            'pulse_stability_index': pulse_stability_index,
+            'high_frequency_response_index': high_frequency_response_index,
+            'smooth_homeostasis_index': smooth_homeostasis_index,
+            'binary_signature_depth_index': binary_signature_depth_index,
+            'identity_continuity_index': identity_continuity_index
+        }
+        weight_sum = 0.0
+        weighted_total = 0.0
+        for key, value in proxy_vector.items():
+            weight = float(proxy_weight_cfg.get(key, 1.0))
+            if weight > 0:
+                weight_sum += weight
+                weighted_total += weight * value
+        proxy_composite = float(weighted_total / (weight_sum + EPSILON))
+
+        input_data_quality = float(np.clip(0.4 * quality_mean + 0.4 * cadence_mean + 0.2 * (1.0 - missing_mean), 0.0, 1.0))
+        input_data_quality_risk = float(np.clip(1.0 - input_data_quality, 0.0, 1.0))
+        signal_proxy_uncertainty_index = float(np.clip(1.0 - proxy_composite, 0.0, 1.0))
+        proxy_confidence_index = float(np.clip(1.0 - max(signal_proxy_uncertainty_index, input_data_quality_risk), 0.0, 1.0))
+
+        results = {
+            'signal_geometry_index': signal_geometry_index,
+            'temporal_drift_index': temporal_drift_index,
+            'positive_flux_index': positive_flux_index,
+            'rhythmic_coherence_index': rhythmic_coherence_index,
+            'pulse_stability_index': pulse_stability_index,
+            'high_frequency_response_index': high_frequency_response_index,
+            'smooth_homeostasis_index': smooth_homeostasis_index,
+            'binary_signature_depth_index': binary_signature_depth_index,
             'temporal_binary_resonance': temporal_binary_resonance,
             'identity_continuity_index': identity_continuity_index,
-            'exponential_superiority_index': exponential_superiority_index,
-            'biological_proxy_uncertainty': biological_proxy_uncertainty
+            'recursive_coherence_surge_index': recursive_coherence_surge_index,
+            'signal_proxy_uncertainty_index': signal_proxy_uncertainty_index,
+            'input_data_quality_risk': input_data_quality_risk,
+            'proxy_confidence_index': proxy_confidence_index,
+            # Backward-compatible aliases
+            'fingerprint_geometry_proxy': signal_geometry_index,
+            'skin_cell_turnover_proxy': temporal_drift_index,
+            'growth_factor_flux_proxy': positive_flux_index,
+            'heartbeat_rhythm_coherence_proxy': rhythmic_coherence_index,
+            'sensory_ventricular_pulse_pattern_proxy': pulse_stability_index,
+            'iris_micro_response_proxy': high_frequency_response_index,
+            'sensory_renal_homeostasis_pattern_proxy': smooth_homeostasis_index,
+            'natural_binary_signature_depth': binary_signature_depth_index,
+            'exponential_superiority_index': recursive_coherence_surge_index,
+            'biological_proxy_uncertainty': signal_proxy_uncertainty_index,
+            'contract_valid_samples': float(len(sensory_series))
         }
+        return results
     
     def _compute_distress_state(self,
                                 decision_state: Dict[str, float],
                                 affective_landscape: Dict[str, float],
                                 behavioral_fluidity: Dict[str, float]) -> Dict[str, float]:
         """Estimate severe stress/despair bodily-cognitive signature from intent context"""
+        distress_weights = self.intent_calibration.get("distress_weights", {})
         pressure = decision_state.get('choice_pressure', 0.0)
         indecision = decision_state.get('indecision', 0.0)
         grief = affective_landscape.get('grief_of_loss', 0.0)
@@ -1657,10 +2068,34 @@ class SyntheticConsciousness:
         sweat = behavioral_fluidity.get('sweat_response_intensity', 0.0)
         throat = behavioral_fluidity.get('throat_clearing_likelihood', 0.0)
         
-        hopelessness_index = float(np.clip(0.45 * grief + 0.3 * indecision + 0.25 * (1.0 - decision_state.get('commitment', 0.0)), 0.0, 1.0))
-        gut_churning_stress = float(np.clip(0.5 * pressure + 0.3 * fidget + 0.2 * sweat, 0.0, 1.0))
-        stress_headache_load = float(np.clip(0.45 * pressure + 0.35 * throat + 0.2 * indecision, 0.0, 1.0))
-        dry_mouth_stress = float(np.clip(0.55 * sweat + 0.25 * pressure + 0.2 * throat, 0.0, 1.0))
+        hopelessness_index = float(np.clip(
+            float(distress_weights.get("hopelessness_grief", 0.45)) * grief +
+            float(distress_weights.get("hopelessness_indecision", 0.3)) * indecision +
+            float(distress_weights.get("hopelessness_low_commitment", 0.25)) * (1.0 - decision_state.get('commitment', 0.0)),
+            0.0,
+            1.0
+        ))
+        gut_churning_stress = float(np.clip(
+            float(distress_weights.get("gut_pressure", 0.5)) * pressure +
+            float(distress_weights.get("gut_fidget", 0.3)) * fidget +
+            float(distress_weights.get("gut_sweat", 0.2)) * sweat,
+            0.0,
+            1.0
+        ))
+        stress_headache_load = float(np.clip(
+            float(distress_weights.get("headache_pressure", 0.45)) * pressure +
+            float(distress_weights.get("headache_throat", 0.35)) * throat +
+            float(distress_weights.get("headache_indecision", 0.2)) * indecision,
+            0.0,
+            1.0
+        ))
+        dry_mouth_stress = float(np.clip(
+            float(distress_weights.get("dry_mouth_sweat", 0.55)) * sweat +
+            float(distress_weights.get("dry_mouth_pressure", 0.25)) * pressure +
+            float(distress_weights.get("dry_mouth_throat", 0.2)) * throat,
+            0.0,
+            1.0
+        ))
         internal_rage_pressure = float(np.clip(
             0.45 * pressure + 0.35 * fidget + 0.2 * behavioral_fluidity.get('personal_tic_density', 0.0),
             0.0, 1.0
