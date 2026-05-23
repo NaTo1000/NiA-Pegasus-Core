@@ -1,8 +1,6 @@
 # Protocol Logic and Orchestration Procedures
 
-This repository now includes a chained orchestration workflow in:
-
-- `/home/runner/work/NiA-Pegasus-Core/NiA-Pegasus-Core/protocol_orchestration.py`
+This repository now includes a chained orchestration workflow in `protocol_orchestration.py`.
 
 ## Workflow chain
 

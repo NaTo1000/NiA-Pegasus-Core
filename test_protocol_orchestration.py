@@ -42,25 +42,36 @@ def test_data_then_mcp_fallback_chain():
     assert any(step["channel"] == "data" and not step["ok"] for step in trace.steps)
 
 
-def test_arrest_procedure_blocks_failing_channel_then_recovers(monkeypatch):
-    orchestrator = ProtocolWorkflowOrchestrator(max_failures=1, cooldown_seconds=0.2)
+def test_arrest_procedure_blocks_failing_channel_then_recovers():
+    orchestrator = ProtocolWorkflowOrchestrator(max_failures=2, cooldown_seconds=0.2)
+    now = time.time()
+    orchestrator.policies["file"].arrested_until = now + 0.5
+    orchestrator.policies["data"].arrested_until = now + 0.5
+    orchestrator.policies["https"].arrested_until = now + 0.5
 
     def broken_server(_: str):
         raise RuntimeError("offline")
 
     with pytest.raises(RuntimeError):
         orchestrator.resolve_resource(resource_key="x", mcp_servers=[broken_server])
+    with pytest.raises(RuntimeError):
+        orchestrator.resolve_resource(resource_key="x", mcp_servers=[broken_server])
     assert orchestrator.policies["mcp"].is_arrested()
 
-    # During arrest, mcp should be skipped and data fallback should succeed.
+    # During arrest, mcp should be skipped.
+    with pytest.raises(RuntimeError):
+        orchestrator.resolve_resource(resource_key="x", mcp_servers=[broken_server])
+    mcp_step = [step for step in orchestrator.monitor_log[-1].steps if step["channel"] == "mcp"][0]
+    assert mcp_step["error"] == "arrested"
+
+    # While mcp remains arrested, data fallback should still succeed.
+    orchestrator.policies["data"].arrested_until = 0.0
     payload, trace = orchestrator.resolve_resource(
         resource_key="x",
         data_payloads={"x": {"source": "data"}},
         mcp_servers=[broken_server],
     )
     assert payload["source"] == "data"
-    mcp_step = [step for step in trace.steps if step["channel"] == "mcp"][0]
-    assert mcp_step["error"] == "arrested"
 
     # After cooldown, mcp is attempted again.
     time.sleep(0.25)
