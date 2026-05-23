@@ -72,10 +72,14 @@ HUMAN_INTENT_HIGH_BIOLOGICAL_UNCERTAINTY_THRESHOLD = 0.7
 HUMAN_INTENT_MAX_INTENT_REASONS = 2
 HUMAN_INTENT_EXPONENTIAL_SURGE_THRESHOLD = 0.82
 
+# Four passes provide progressively broader spatial coupling (shift 1..4)
+# without over-smoothing signature differences in short sensory windows.
 BINARY_DEPTH_RECURSIVE_PASSES = 4
 BINARY_DEPTH_TEMPORAL_WEIGHT = 0.4
 BINARY_DEPTH_SPATIAL_WEIGHT = 0.3
 BINARY_DEPTH_RECURSIVE_WEIGHT = 0.3
+BINARY_DEPTH_SHIFT_BASE = 1
+BINARY_DEPTH_BLEND_FACTOR = 0.5
 
 BEHAVIOR_SPEECH_BAND_START_RATIO = 5
 BEHAVIOR_SPEECH_BAND_END_RATIO = 2
@@ -1580,11 +1584,11 @@ class SyntheticConsciousness:
         recursive_scores = []
         recursion_state = binary_signature.copy()
         for i in range(BINARY_DEPTH_RECURSIVE_PASSES):
-            shifted = np.roll(recursion_state, shift=i + 1, axis=1)
+            shifted = np.roll(recursion_state, shift=i + BINARY_DEPTH_SHIFT_BASE, axis=1)
             coherence = 1.0 - np.mean(np.abs(recursion_state - shifted))
             coherence = float(np.clip(coherence, 0.0, 1.0))
             recursive_scores.append(coherence)
-            recursion_state = 0.5 * (recursion_state + shifted)
+            recursion_state = BINARY_DEPTH_BLEND_FACTOR * (recursion_state + shifted)
 
         recursive_depth = float(np.mean(recursive_scores)) if recursive_scores else 0.0
         natural_binary_signature_depth = float(np.clip(
@@ -1593,6 +1597,8 @@ class SyntheticConsciousness:
             BINARY_DEPTH_RECURSIVE_WEIGHT * recursive_depth,
             0.0, 1.0
         ))
+        # We reward strong average recursive coherence and then boost it by score dispersion:
+        # consistent gains across wider recursive shifts indicate richer multi-scale structure.
         exponential_superiority_index = float(np.clip(
             np.mean(recursive_scores) * (1.0 + np.std(recursive_scores)),
             0.0, 1.0
@@ -1601,6 +1607,8 @@ class SyntheticConsciousness:
         # Equal weighting is intentional as a neutral baseline because these proxies are heuristic and uncalibrated.
         # TODO: Calibrate per-proxy weights using labeled multimodal physiological benchmark data
         # (e.g., rhythm/thermoregulatory ground truth), targeting improved calibration error and temporal stability.
+        # Composite intentionally excludes temporal_binary_resonance and exponential_superiority_index
+        # to avoid direct + derived double-counting from the same recursive binary signals.
         proxy_composite = np.mean([
             fingerprint_geometry_proxy,
             skin_cell_turnover_proxy,
@@ -1610,9 +1618,7 @@ class SyntheticConsciousness:
             iris_micro_response_proxy,
             sensory_renal_homeostasis_pattern_proxy,
             natural_binary_signature_depth,
-            temporal_binary_resonance,
-            identity_continuity_index,
-            exponential_superiority_index
+            identity_continuity_index
         ])
         # Inverse-confidence over proxy strength: higher means weaker/less coherent proxy signals.
         biological_proxy_uncertainty = float(np.clip(1.0 - proxy_composite, 0.0, 1.0))
