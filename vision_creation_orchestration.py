@@ -71,6 +71,18 @@ class DecisionEvaluation:
 
 
 @dataclass
+class TouchPressurePacket:
+    """Pressure-touch telemetry for dexterity control."""
+
+    packet_id: str
+    touch_points: List[Dict[str, float]]
+    tesseract_block_width: int = 2048
+    tesseract_block_height: int = 2048
+    tesseract_depth_layers: int = 4
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class SnapshotBatch:
     """Chunked snapshot sequencing contract."""
 
@@ -873,6 +885,112 @@ class VisionCreationOrchestrator:
         summary["audit_chain_hash"] = self.audit_trail.chain_hash()
         return summary
 
+    def process_dexterity_touch_control(
+        self,
+        *,
+        packets: Sequence[TouchPressurePacket],
+        required_block_shape: Tuple[int, int] = (2048, 2048),
+    ) -> Dict[str, Any]:
+        evaluations: List[Dict[str, Any]] = []
+        required_w, required_h = required_block_shape
+
+        for packet in packets:
+            if (packet.tesseract_block_width, packet.tesseract_block_height) != required_block_shape:
+                raise ValueError(
+                    "invalid_tesseract_block_shape:"
+                    f"{packet.tesseract_block_width}x{packet.tesseract_block_height};"
+                    f"required={required_w}x{required_h}"
+                )
+
+            normalized_points = []
+            for point in packet.touch_points:
+                normalized_points.append(
+                    {
+                        "x": float(max(0.0, min(required_w - 1, point.get("x", 0.0)))),
+                        "y": float(max(0.0, min(required_h - 1, point.get("y", 0.0)))),
+                        "pressure": float(max(0.0, min(1.0, point.get("pressure", 0.0)))),
+                        "velocity": float(max(0.0, point.get("velocity", 0.0))),
+                    }
+                )
+
+            count = max(1, len(normalized_points))
+            pressure_values = [p["pressure"] for p in normalized_points] or [0.0]
+            velocity_values = [p["velocity"] for p in normalized_points] or [0.0]
+            avg_pressure = sum(pressure_values) / count
+            peak_pressure = max(pressure_values)
+            avg_velocity = sum(velocity_values) / count
+
+            pressure_balance = max(0.0, 1.0 - abs(avg_pressure - 0.55))
+            velocity_control = max(0.0, 1.0 - min(1.0, avg_velocity / 3.0))
+            touch_coverage = min(1.0, len(normalized_points) / 64.0)
+            dexterity_score = (
+                pressure_balance * 0.45
+                + velocity_control * 0.35
+                + touch_coverage * 0.20
+            )
+
+            if dexterity_score >= 0.82:
+                dexterity_level = "expert"
+                control_mode = "micro_precision_harmonic_control"
+            elif dexterity_score >= 0.62:
+                dexterity_level = "advanced"
+                control_mode = "adaptive_precision_control"
+            elif dexterity_score >= 0.42:
+                dexterity_level = "intermediate"
+                control_mode = "guided_pressure_alignment"
+            else:
+                dexterity_level = "basic"
+                control_mode = "stability_assist_mode"
+
+            if peak_pressure >= 0.85:
+                pressure_touch_class = "firm_precision"
+            elif peak_pressure >= 0.55:
+                pressure_touch_class = "balanced_control"
+            else:
+                pressure_touch_class = "light_touch"
+
+            evaluation = {
+                "packet_id": packet.packet_id,
+                "block_shape": [packet.tesseract_block_width, packet.tesseract_block_height],
+                "tesseract_depth_layers": packet.tesseract_depth_layers,
+                "touch_count": len(normalized_points),
+                "pressure_touch_class": pressure_touch_class,
+                "average_pressure": round(avg_pressure, 4),
+                "peak_pressure": round(peak_pressure, 4),
+                "average_velocity": round(avg_velocity, 4),
+                "dexterity_score": round(dexterity_score, 4),
+                "dexterity_percent": round(dexterity_score * 100.0, 2),
+                "dexterity_level": dexterity_level,
+                "control_mode": control_mode,
+            }
+            evaluations.append(evaluation)
+            self._record("dexterity_touch_control", dict(evaluation))
+
+        evaluations.sort(key=lambda item: item["dexterity_score"], reverse=True)
+        for rank, item in enumerate(evaluations, start=1):
+            item["precedence_rank"] = rank
+
+        summary = {
+            "packet_count": len(evaluations),
+            "required_block_shape": [required_w, required_h],
+            "average_dexterity_percent": round(
+                sum(item["dexterity_percent"] for item in evaluations) / max(1, len(evaluations)),
+                2,
+            ),
+            "evaluations": evaluations,
+            "audit_chain_hash": self.audit_trail.chain_hash(),
+        }
+        self._record(
+            "dexterity_touch_summary",
+            {
+                "packet_count": summary["packet_count"],
+                "average_dexterity_percent": summary["average_dexterity_percent"],
+                "required_block_shape": summary["required_block_shape"],
+            },
+        )
+        summary["audit_chain_hash"] = self.audit_trail.chain_hash()
+        return summary
+
 
 __all__ = [
     "Assignment",
@@ -885,6 +1003,7 @@ __all__ = [
     "ReportAttachment",
     "SnapshotBatch",
     "SnapshotSequencingEngine",
+    "TouchPressurePacket",
     "TwinbrainExportBundle",
     "VectorGPSPacket",
     "VisionCreationOrchestrator",

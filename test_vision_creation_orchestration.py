@@ -1,10 +1,13 @@
 import hashlib
 import json
 
+import pytest
+
 from vision_creation_orchestration import (
     BehaviorTelemetryPacket,
     DecisionPrompt,
     SnapshotSequencingEngine,
+    TouchPressurePacket,
     VectorGPSPacket,
     VisionCreationOrchestrator,
 )
@@ -195,3 +198,58 @@ def test_decision_processing_writes_blockchain_audit_and_research_summary():
     assert orchestrator.audit_trail.verify()
     assert any(record.event_type == "decision_processing" for record in orchestrator.audit_trail.records)
     assert any(record.event_type == "decision_research_summary" for record in orchestrator.audit_trail.records)
+
+
+def test_dexterity_pressure_touch_control_with_2048_tesseract_block():
+    orchestrator = VisionCreationOrchestrator()
+    summary = orchestrator.process_dexterity_touch_control(
+        packets=[
+            TouchPressurePacket(
+                packet_id="tp-1",
+                touch_points=[
+                    {"x": 10, "y": 20, "pressure": 0.62, "velocity": 0.4},
+                    {"x": 24, "y": 40, "pressure": 0.58, "velocity": 0.5},
+                    {"x": 31, "y": 55, "pressure": 0.64, "velocity": 0.3},
+                ],
+            ),
+            TouchPressurePacket(
+                packet_id="tp-2",
+                touch_points=[
+                    {"x": 120, "y": 320, "pressure": 0.87, "velocity": 0.7},
+                    {"x": 140, "y": 340, "pressure": 0.81, "velocity": 0.6},
+                    {"x": 160, "y": 360, "pressure": 0.84, "velocity": 0.8},
+                ],
+            ),
+        ]
+    )
+
+    assert summary["packet_count"] == 2
+    assert summary["required_block_shape"] == [2048, 2048]
+    assert len(summary["evaluations"]) == 2
+    assert summary["evaluations"][0]["dexterity_score"] >= summary["evaluations"][1]["dexterity_score"]
+    assert summary["audit_chain_hash"] == orchestrator.audit_trail.chain_hash()
+    assert orchestrator.audit_trail.verify()
+
+    for item in summary["evaluations"]:
+        assert item["block_shape"] == [2048, 2048]
+        assert item["pressure_touch_class"] in {"firm_precision", "balanced_control", "light_touch"}
+        assert item["dexterity_level"] in {"expert", "advanced", "intermediate", "basic"}
+        assert 0.0 <= item["dexterity_percent"] <= 100.0
+
+    assert any(record.event_type == "dexterity_touch_control" for record in orchestrator.audit_trail.records)
+    assert any(record.event_type == "dexterity_touch_summary" for record in orchestrator.audit_trail.records)
+
+
+def test_dexterity_pressure_touch_control_rejects_non_2048_block():
+    orchestrator = VisionCreationOrchestrator()
+    with pytest.raises(ValueError, match="invalid_tesseract_block_shape"):
+        orchestrator.process_dexterity_touch_control(
+            packets=[
+                TouchPressurePacket(
+                    packet_id="tp-invalid",
+                    touch_points=[{"x": 0, "y": 0, "pressure": 0.5, "velocity": 0.1}],
+                    tesseract_block_width=1024,
+                    tesseract_block_height=1024,
+                )
+            ]
+        )
