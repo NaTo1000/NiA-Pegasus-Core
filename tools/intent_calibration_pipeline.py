@@ -11,6 +11,9 @@ from typing import Any, Dict, List, Tuple
 
 import numpy as np
 
+MIN_SAMPLES_FOR_CALIBRATION = 20
+NEAR_TERM_THRESHOLD_RATIO = 0.55
+
 
 @dataclass
 class CalibrationSample:
@@ -37,7 +40,15 @@ def load_samples(path: Path) -> List[CalibrationSample]:
     with path.open("r", encoding="utf-8") as handle:
         raw = json.load(handle)
     samples = []
-    for row in raw:
+    for index, row in enumerate(raw):
+        try:
+            label_surge = int(row.get("label_surge", 0))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid label_surge at sample[{index}]") from exc
+        try:
+            label_immediate = int(row.get("label_immediate", 0))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid label_immediate at sample[{index}]") from exc
         samples.append(
             CalibrationSample(
                 timestamp=float(row.get("timestamp", 0.0)),
@@ -47,8 +58,8 @@ def load_samples(path: Path) -> List[CalibrationSample]:
                 choice_pressure=_to_float(row.get("choice_pressure", 0.0)),
                 indecision=_to_float(row.get("indecision", 0.0)),
                 environmental_turbulence=_to_float(row.get("environmental_turbulence", 0.0)),
-                label_surge=int(row.get("label_surge", 0)),
-                label_immediate=int(row.get("label_immediate", 0)),
+                label_surge=label_surge,
+                label_immediate=label_immediate,
             )
         )
     return samples
@@ -180,7 +191,7 @@ def calibrate(samples: Dict[str, List[CalibrationSample]]) -> Dict[str, Any]:
         },
         "routing_thresholds": {
             "immediate_pressure_threshold": immediate_threshold,
-            "near_term_pressure_threshold": max(0.1, immediate_threshold * 0.55),
+            "near_term_pressure_threshold": max(0.1, immediate_threshold * NEAR_TERM_THRESHOLD_RATIO),
             "high_indecision_threshold": float(np.clip(indecision_mean + 0.2, 0.0, 1.0)),
             "high_environmental_turbulence_threshold": float(np.clip(turbulence_mean + 0.2, 0.0, 1.0)),
             "high_proxy_uncertainty_threshold": 0.7,
@@ -232,8 +243,8 @@ def main() -> int:
     args = parser.parse_args()
 
     samples = load_samples(Path(args.input))
-    if len(samples) < 20:
-        raise SystemExit("Need at least 20 labeled samples for governed splits.")
+    if len(samples) < MIN_SAMPLES_FOR_CALIBRATION:
+        raise SystemExit(f"Need at least {MIN_SAMPLES_FOR_CALIBRATION} labeled samples for governed splits.")
     split = split_governance(samples)
     artifact = calibrate(split)
     passed, checks = evaluate_gates(artifact)

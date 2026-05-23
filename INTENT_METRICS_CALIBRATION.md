@@ -47,13 +47,13 @@ All indices are in `[0,1]`.
 
 ## 3) Offline calibration/evaluation pipeline
 
-Script: `/home/runner/work/NiA-Pegasus-Core/NiA-Pegasus-Core/tools/intent_calibration_pipeline.py`
+Script: `${REPO_ROOT}/tools/intent_calibration_pipeline.py`
 
 Usage:
 ```bash
-python /home/runner/work/NiA-Pegasus-Core/NiA-Pegasus-Core/tools/intent_calibration_pipeline.py \
+python ${REPO_ROOT}/tools/intent_calibration_pipeline.py \
   --input /absolute/path/labeled_intent_samples.json \
-  --output /home/runner/work/NiA-Pegasus-Core/NiA-Pegasus-Core/calibration/intent_runtime_calibration.v1.json
+  --output ${REPO_ROOT}/calibration/intent_runtime_calibration.v1.json
 ```
 
 Pipeline guarantees:

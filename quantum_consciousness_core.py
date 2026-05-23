@@ -40,21 +40,21 @@ DECISION_PRESSURE_FEAR_WEIGHT = 0.35
 DECISION_PRESSURE_ANGER_WEIGHT = 0.2
 DECISION_PRESSURE_ANTICIPATION_WEIGHT = 0.15
 DECISION_PRESSURE_INDECISION_WEIGHT = 0.15
-DECISION_PRESSURE_LOW_AGENCY_WEIGHT = 0.15
+DECISION_PRESSURE_ONE_MINUS_AGENCY_WEIGHT = 0.15
 # Keep normalized for bounded pressure output in [0, 1].
 DECISION_PRESSURE_WEIGHT_SUM = (
     DECISION_PRESSURE_FEAR_WEIGHT +
     DECISION_PRESSURE_ANGER_WEIGHT +
     DECISION_PRESSURE_ANTICIPATION_WEIGHT +
     DECISION_PRESSURE_INDECISION_WEIGHT +
-    DECISION_PRESSURE_LOW_AGENCY_WEIGHT
+    DECISION_PRESSURE_ONE_MINUS_AGENCY_WEIGHT
 )
 if abs(DECISION_PRESSURE_WEIGHT_SUM - 1.0) > EPSILON:
     raise ValueError(
         f"Decision pressure weights invalid: sum={DECISION_PRESSURE_WEIGHT_SUM} "
         f"(fear={DECISION_PRESSURE_FEAR_WEIGHT}, anger={DECISION_PRESSURE_ANGER_WEIGHT}, "
         f"anticipation={DECISION_PRESSURE_ANTICIPATION_WEIGHT}, indecision={DECISION_PRESSURE_INDECISION_WEIGHT}, "
-        f"low_agency={DECISION_PRESSURE_LOW_AGENCY_WEIGHT})"
+        f"one_minus_agency={DECISION_PRESSURE_ONE_MINUS_AGENCY_WEIGHT})"
     )
 
 AFFECT_GRIEF_BASE_WEIGHT = 0.6
@@ -652,8 +652,7 @@ class SyntheticConsciousness:
                 if isinstance(external, dict):
                     calibration = _deep_update_dict(calibration, external)
             except (OSError, json.JSONDecodeError, TypeError, ValueError):
-                # Keep defaults if artifact cannot be read or parsed safely.
-                pass
+                print(f"[SyntheticConsciousness] warning: failed to load calibration artifact: {configured_path}")
         return calibration
 
     def _weights_sum(self, weights: Dict[str, float]) -> float:
@@ -1195,7 +1194,7 @@ class SyntheticConsciousness:
         anger_w = float(decision_weights.get("anger", DECISION_PRESSURE_ANGER_WEIGHT))
         anticipation_w = float(decision_weights.get("anticipation", DECISION_PRESSURE_ANTICIPATION_WEIGHT))
         indecision_w = float(decision_weights.get("indecision", DECISION_PRESSURE_INDECISION_WEIGHT))
-        low_agency_w = float(decision_weights.get("low_agency", DECISION_PRESSURE_LOW_AGENCY_WEIGHT))
+        low_agency_w = float(decision_weights.get("low_agency", DECISION_PRESSURE_ONE_MINUS_AGENCY_WEIGHT))
         weight_sum = fear_w + anger_w + anticipation_w + indecision_w + low_agency_w + EPSILON
 
         pressure = float(np.clip(

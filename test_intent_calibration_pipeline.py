@@ -19,7 +19,7 @@ def _sample(i: int) -> dict:
 
 
 def test_pipeline_exports_governed_artifact(tmp_path):
-    repo_root = Path("/home/runner/work/NiA-Pegasus-Core/NiA-Pegasus-Core")
+    repo_root = Path(__file__).resolve().parent
     input_path = tmp_path / "samples.json"
     output_path = tmp_path / "artifact.json"
     input_path.write_text(json.dumps([_sample(i) for i in range(60)]), encoding="utf-8")
