@@ -3,6 +3,7 @@ import sys
 import time
 import types
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -119,17 +120,17 @@ def test_low_latency_path_preference_selects_faster_route():
 
 def test_high_bandwidth_path_preference_selects_richer_route():
     orchestrator = ProtocolWorkflowOrchestrator()
-    orchestrator._read_https_source = lambda url: {"source": url}  # type: ignore[method-assign]
 
-    payload, trace = orchestrator.resolve_resource(
-        resource_key="resource_a",
-        data_payloads={"resource_a": {"source": "data"}},
-        https_urls=["https://mesh.node/a"],
-        path_metrics={
-            "data:resource_a": {"latency": 0.1, "bandwidth": 5.0, "mesh_health": 1.0},
-            "https://mesh.node/a": {"latency": 0.1, "bandwidth": 10_000.0, "mesh_health": 1.0},
-        },
-    )
+    with patch.object(orchestrator, "_read_https_source", side_effect=lambda url: {"source": url}):
+        payload, trace = orchestrator.resolve_resource(
+            resource_key="resource_a",
+            data_payloads={"resource_a": {"source": "data"}},
+            https_urls=["https://mesh.node/a"],
+            path_metrics={
+                "data:resource_a": {"latency": 0.1, "bandwidth": 5.0, "mesh_health": 1.0},
+                "https://mesh.node/a": {"latency": 0.1, "bandwidth": 10_000.0, "mesh_health": 1.0},
+            },
+        )
 
     assert payload["source"] == "https://mesh.node/a"
     assert trace.selected_channel == "https"
@@ -170,28 +171,28 @@ def test_mesh_relay_failover_and_https_arrest_behavior():
             raise RuntimeError("link degraded")
         return {"source": url}
 
-    orchestrator._read_https_source = fake_https  # type: ignore[method-assign]
-    payload, trace = orchestrator.resolve_resource(
-        resource_key="resource_a",
-        https_urls=["https://primary.mesh/path"],
-        mesh_relays={"https://primary.mesh/path": ["https://relay.mesh/path"]},
-        path_metrics={
-            "https://primary.mesh/path": {"latency": 0.1, "bandwidth": 50.0, "mesh_health": 0.1},
-            "https://relay.mesh/path": {"latency": 0.2, "bandwidth": 70.0, "mesh_health": 0.95},
-        },
-    )
-    assert payload["source"] == "https://relay.mesh/path"
-    assert trace.selected_path == "https://relay.mesh/path"
-    assert trace.mesh_failover_events
+    with patch.object(orchestrator, "_read_https_source", side_effect=fake_https):
+        payload, trace = orchestrator.resolve_resource(
+            resource_key="resource_a",
+            https_urls=["https://primary.mesh/path"],
+            mesh_relays={"https://primary.mesh/path": ["https://relay.mesh/path"]},
+            path_metrics={
+                "https://primary.mesh/path": {"latency": 0.1, "bandwidth": 50.0, "mesh_health": 0.1},
+                "https://relay.mesh/path": {"latency": 0.2, "bandwidth": 70.0, "mesh_health": 0.95},
+            },
+        )
+        assert payload["source"] == "https://relay.mesh/path"
+        assert trace.selected_path == "https://relay.mesh/path"
+        assert trace.mesh_failover_events
 
-    with pytest.raises(RuntimeError):
-        orchestrator.resolve_resource(
-            resource_key="resource_a",
-            https_urls=["https://primary.mesh/path"],
-        )
-    with pytest.raises(RuntimeError):
-        orchestrator.resolve_resource(
-            resource_key="resource_a",
-            https_urls=["https://primary.mesh/path"],
-        )
+        with pytest.raises(RuntimeError):
+            orchestrator.resolve_resource(
+                resource_key="resource_a",
+                https_urls=["https://primary.mesh/path"],
+            )
+        with pytest.raises(RuntimeError):
+            orchestrator.resolve_resource(
+                resource_key="resource_a",
+                https_urls=["https://primary.mesh/path"],
+            )
     assert orchestrator.policies["https"].is_arrested()

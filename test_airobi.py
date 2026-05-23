@@ -1,6 +1,7 @@
 import asyncio
 import json
 import time
+from unittest.mock import patch
 
 from aieroub_airobi import AiRobI, ErrorReturnSignal, InnovationUpdate
 from protocol_orchestration import ProtocolWorkflowOrchestrator
@@ -44,7 +45,7 @@ def test_airobi_sandbox_test_captures_failures():
 
     report = engine.sandbox_test_update(update, failing_executor)
     assert report["success"] is False
-    assert "sandbox failure" in report["error"]
+    assert report["error"] == "execution_failed:RuntimeError"
 
 
 def test_airobi_continuous_mode_produces_batches():
@@ -95,17 +96,17 @@ def test_airobi_audits_multiplexing_and_mesh_failover_events():
             raise RuntimeError("primary down")
         return {"pattern": "mesh relay"}
 
-    orchestrator._read_https_source = fake_https  # type: ignore[method-assign]
     engine = AiRobI(orchestrator=orchestrator)
-    batch = engine.generate_update_batch(
-        errors=[ErrorReturnSignal(code=503, message="service down", component="gateway")],
-        https_urls=["https://primary.mesh/topic.json"],
-        mesh_relays={"https://primary.mesh/topic.json": ["https://relay.mesh/topic.json"]},
-        path_metrics={
-            "https://primary.mesh/topic.json": {"latency": 0.2, "bandwidth": 25.0, "mesh_health": 0.1},
-            "https://relay.mesh/topic.json": {"latency": 0.3, "bandwidth": 50.0, "mesh_health": 0.9},
-        },
-    )
+    with patch.object(orchestrator, "_read_https_source", side_effect=fake_https):
+        batch = engine.generate_update_batch(
+            errors=[ErrorReturnSignal(code=503, message="service down", component="gateway")],
+            https_urls=["https://primary.mesh/topic.json"],
+            mesh_relays={"https://primary.mesh/topic.json": ["https://relay.mesh/topic.json"]},
+            path_metrics={
+                "https://primary.mesh/topic.json": {"latency": 0.2, "bandwidth": 25.0, "mesh_health": 0.1},
+                "https://relay.mesh/topic.json": {"latency": 0.3, "bandwidth": 50.0, "mesh_health": 0.9},
+            },
+        )
 
     assert batch["count"] == 1
     events = [record.event_type for record in engine.audit_engine.records]

@@ -292,7 +292,7 @@ class AiRobI:
         except Exception as exc:  # noqa: BLE001
             result = None
             success = False
-            error = f"{type(exc).__name__}: {exc}"
+            error = f"execution_failed:{type(exc).__name__}"
             LOGGER.exception("AiRobI sandbox test failed for code %s: %s", update.error_code, error)
 
         report = {

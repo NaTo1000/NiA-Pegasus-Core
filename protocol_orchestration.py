@@ -360,7 +360,7 @@ class ProtocolWorkflowOrchestrator:
             return None, f"mcp:{index}", "mcp_unavailable"
         except Exception as exc:  # noqa: BLE001
             LOGGER.exception("MCP server %s failed for resource %s", index, resource_key)
-            return None, f"mcp:{index}", f"mcp_error:{type(exc).__name__}: {exc}"
+            return None, f"mcp:{index}", f"mcp_error:{type(exc).__name__}"
 
     def _from_single_https(self, url: str) -> Tuple[Any, str, Optional[str]]:
         try:
@@ -368,7 +368,7 @@ class ProtocolWorkflowOrchestrator:
             return payload, url, None
         except Exception as exc:  # noqa: BLE001
             LOGGER.exception("HTTPS source failed for url %s", url)
-            return None, url, f"https_error:{type(exc).__name__}: {exc}"
+            return None, url, f"https_error:{type(exc).__name__}"
 
     def _read_https_source(self, url: str) -> Any:
         parsed = urlparse(url)
