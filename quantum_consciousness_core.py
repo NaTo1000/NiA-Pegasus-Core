@@ -46,7 +46,7 @@ DECISION_PRESSURE_WEIGHT_SUM = (
     DECISION_PRESSURE_INDECISION_WEIGHT +
     DECISION_PRESSURE_LOW_AGENCY_WEIGHT
 )
-if abs(DECISION_PRESSURE_WEIGHT_SUM - 1.0) > 1e-9:
+if abs(DECISION_PRESSURE_WEIGHT_SUM - 1.0) > EPSILON:
     raise ValueError(
         f"Decision pressure weights invalid: sum={DECISION_PRESSURE_WEIGHT_SUM} "
         f"(fear={DECISION_PRESSURE_FEAR_WEIGHT}, anger={DECISION_PRESSURE_ANGER_WEIGHT}, "
@@ -80,6 +80,7 @@ BINARY_DEPTH_SPATIAL_WEIGHT = 0.3
 BINARY_DEPTH_RECURSIVE_WEIGHT = 0.3
 BINARY_DEPTH_SHIFT_BASE = 1
 BINARY_DEPTH_BLEND_FACTOR = 0.5
+BINARY_DEPTH_STD_BOOST_CAP = 0.25
 
 BEHAVIOR_SPEECH_BAND_START_RATIO = 5
 BEHAVIOR_SPEECH_BAND_END_RATIO = 2
@@ -1583,12 +1584,16 @@ class SyntheticConsciousness:
 
         recursive_scores = []
         recursion_state = binary_signature.copy()
+        blend_complement = 1.0 - BINARY_DEPTH_BLEND_FACTOR
         for i in range(BINARY_DEPTH_RECURSIVE_PASSES):
             shifted = np.roll(recursion_state, shift=i + BINARY_DEPTH_SHIFT_BASE, axis=1)
             coherence = 1.0 - np.mean(np.abs(recursion_state - shifted))
             coherence = float(np.clip(coherence, 0.0, 1.0))
             recursive_scores.append(coherence)
-            recursion_state = BINARY_DEPTH_BLEND_FACTOR * (recursion_state + shifted)
+            recursion_state = (
+                BINARY_DEPTH_BLEND_FACTOR * recursion_state +
+                blend_complement * shifted
+            )
 
         recursive_depth = float(np.mean(recursive_scores)) if recursive_scores else 0.0
         natural_binary_signature_depth = float(np.clip(
@@ -1597,19 +1602,20 @@ class SyntheticConsciousness:
             BINARY_DEPTH_RECURSIVE_WEIGHT * recursive_depth,
             0.0, 1.0
         ))
-        # We reward strong average recursive coherence and then boost it by score dispersion:
-        # consistent gains across wider recursive shifts indicate richer multi-scale structure.
+        # Exponential superiority is modeled as average recursive coherence boosted by bounded
+        # dispersion (capped std): stronger mean coherence is primary, while non-zero dispersion
+        # indicates robust structure persists across multiple shift scales rather than a single mode.
         exponential_superiority_index = float(np.clip(
-            np.mean(recursive_scores) * (1.0 + np.std(recursive_scores)),
+            np.mean(recursive_scores) * (1.0 + min(np.std(recursive_scores), BINARY_DEPTH_STD_BOOST_CAP)),
             0.0, 1.0
         )) if recursive_scores else 0.0
         
         # Equal weighting is intentional as a neutral baseline because these proxies are heuristic and uncalibrated.
-        # TODO: Calibrate per-proxy weights using labeled multimodal physiological benchmark data
-        # (e.g., rhythm/thermoregulatory ground truth), targeting improved calibration error and temporal stability.
+        # TODO: Calibrate per-proxy weights using labeled multimodal benchmark data
+        # and target expected calibration error (ECE) <= 0.05 with week-scale temporal drift <= 0.1 std.
         # Composite intentionally excludes temporal_binary_resonance and exponential_superiority_index
         # to avoid direct + derived double-counting from the same recursive binary signals.
-        proxy_composite = np.mean([
+        proxy_values = np.array([
             fingerprint_geometry_proxy,
             skin_cell_turnover_proxy,
             growth_factor_flux_proxy,
@@ -1619,7 +1625,8 @@ class SyntheticConsciousness:
             sensory_renal_homeostasis_pattern_proxy,
             natural_binary_signature_depth,
             identity_continuity_index
-        ])
+        ], dtype=float)
+        proxy_composite = float(np.mean(proxy_values))
         # Inverse-confidence over proxy strength: higher means weaker/less coherent proxy signals.
         biological_proxy_uncertainty = float(np.clip(1.0 - proxy_composite, 0.0, 1.0))
         
