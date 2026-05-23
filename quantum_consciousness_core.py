@@ -70,6 +70,12 @@ HUMAN_INTENT_CONSTRAINED_DECISION_PRESSURE_THRESHOLD = 0.55
 HUMAN_INTENT_HIGH_ENVIRONMENTAL_TURBULENCE_THRESHOLD = 0.6
 HUMAN_INTENT_HIGH_BIOLOGICAL_UNCERTAINTY_THRESHOLD = 0.7
 HUMAN_INTENT_MAX_INTENT_REASONS = 2
+HUMAN_INTENT_EXPONENTIAL_SURGE_THRESHOLD = 0.82
+
+BINARY_DEPTH_RECURSIVE_PASSES = 4
+BINARY_DEPTH_TEMPORAL_WEIGHT = 0.4
+BINARY_DEPTH_SPATIAL_WEIGHT = 0.3
+BINARY_DEPTH_RECURSIVE_WEIGHT = 0.3
 
 BEHAVIOR_SPEECH_BAND_START_RATIO = 5
 BEHAVIOR_SPEECH_BAND_END_RATIO = 2
@@ -1111,6 +1117,7 @@ class SyntheticConsciousness:
         overload = distress_state.get('psychological_overload_risk', 0.0)
         paranoia = distress_state.get('paranoia_hypervigilance', 0.0)
         bio_proxy_uncertainty = biological_factors.get('biological_proxy_uncertainty', 0.0)
+        exponential_superiority = biological_factors.get('exponential_superiority_index', 0.0)
         high_bio_proxy_uncertainty = (
             bio_proxy_uncertainty > HUMAN_INTENT_HIGH_BIOLOGICAL_UNCERTAINTY_THRESHOLD
         )
@@ -1118,6 +1125,11 @@ class SyntheticConsciousness:
             when = 'immediate'
         elif overload > 0.75:
             when = 'containment_required'
+        elif (
+            exponential_superiority > HUMAN_INTENT_EXPONENTIAL_SURGE_THRESHOLD
+            and not high_bio_proxy_uncertainty
+        ):
+            when = 'exponential_surge_window'
         elif high_bio_proxy_uncertainty:
             when = 'proxy_triangulation_window'
         elif paranoia > 0.7:
@@ -1137,6 +1149,11 @@ class SyntheticConsciousness:
             how = 'iterative_reassessment'
         elif overload > 0.75:
             how = 'deescalation_protocol'
+        elif (
+            exponential_superiority > HUMAN_INTENT_EXPONENTIAL_SURGE_THRESHOLD
+            and not high_bio_proxy_uncertainty
+        ):
+            how = 'recursive_binary_intent_lock'
         elif high_bio_proxy_uncertainty:
             how = 'biological_proxy_triangulation'
         elif paranoia > 0.7:
@@ -1448,6 +1465,10 @@ class SyntheticConsciousness:
                 'sensory_ventricular_pulse_pattern_proxy': 0.0,
                 'iris_micro_response_proxy': 0.0,
                 'sensory_renal_homeostasis_pattern_proxy': 0.0,
+                'natural_binary_signature_depth': 0.0,
+                'temporal_binary_resonance': 0.0,
+                'identity_continuity_index': 0.0,
+                'exponential_superiority_index': 0.0,
                 'biological_proxy_uncertainty': 0.0
             }
         
@@ -1467,6 +1488,10 @@ class SyntheticConsciousness:
                 'sensory_ventricular_pulse_pattern_proxy': 0.0,
                 'iris_micro_response_proxy': 0.0,
                 'sensory_renal_homeostasis_pattern_proxy': 0.0,
+                'natural_binary_signature_depth': 0.0,
+                'temporal_binary_resonance': 0.0,
+                'identity_continuity_index': 0.0,
+                'exponential_superiority_index': 0.0,
                 'biological_proxy_uncertainty': 0.0
             }
         
@@ -1528,6 +1553,50 @@ class SyntheticConsciousness:
             ))
         else:
             sensory_renal_homeostasis_pattern_proxy = 0.0
+
+        row_medians = np.median(stacked, axis=1, keepdims=True)
+        binary_signature = (stacked > row_medians).astype(float)
+
+        if binary_signature.shape[0] > 1:
+            temporal_bit_flip = np.mean(np.abs(np.diff(binary_signature, axis=0)), axis=1)
+            temporal_binary_resonance = float(np.clip(
+                1.0 - np.mean(temporal_bit_flip),
+                0.0, 1.0
+            ))
+            identity_continuity_index = float(np.clip(
+                1.0 - np.std(temporal_bit_flip),
+                0.0, 1.0
+            ))
+        else:
+            temporal_binary_resonance = 0.0
+            identity_continuity_index = 0.0
+
+        if binary_signature.shape[1] > 1:
+            spatial_flip_density = np.mean(np.abs(np.diff(binary_signature, axis=1)), axis=1)
+            spatial_order = float(np.clip(1.0 - np.mean(spatial_flip_density), 0.0, 1.0))
+        else:
+            spatial_order = 0.0
+
+        recursive_scores = []
+        recursion_state = binary_signature.copy()
+        for i in range(BINARY_DEPTH_RECURSIVE_PASSES):
+            shifted = np.roll(recursion_state, shift=i + 1, axis=1)
+            coherence = 1.0 - np.mean(np.abs(recursion_state - shifted))
+            coherence = float(np.clip(coherence, 0.0, 1.0))
+            recursive_scores.append(coherence)
+            recursion_state = 0.5 * (recursion_state + shifted)
+
+        recursive_depth = float(np.mean(recursive_scores)) if recursive_scores else 0.0
+        natural_binary_signature_depth = float(np.clip(
+            BINARY_DEPTH_TEMPORAL_WEIGHT * temporal_binary_resonance +
+            BINARY_DEPTH_SPATIAL_WEIGHT * spatial_order +
+            BINARY_DEPTH_RECURSIVE_WEIGHT * recursive_depth,
+            0.0, 1.0
+        ))
+        exponential_superiority_index = float(np.clip(
+            np.mean(recursive_scores) * (1.0 + np.std(recursive_scores)),
+            0.0, 1.0
+        )) if recursive_scores else 0.0
         
         # Equal weighting is intentional as a neutral baseline because these proxies are heuristic and uncalibrated.
         # TODO: Calibrate per-proxy weights using labeled multimodal physiological benchmark data
@@ -1539,7 +1608,11 @@ class SyntheticConsciousness:
             heartbeat_rhythm_coherence_proxy,
             sensory_ventricular_pulse_pattern_proxy,
             iris_micro_response_proxy,
-            sensory_renal_homeostasis_pattern_proxy
+            sensory_renal_homeostasis_pattern_proxy,
+            natural_binary_signature_depth,
+            temporal_binary_resonance,
+            identity_continuity_index,
+            exponential_superiority_index
         ])
         # Inverse-confidence over proxy strength: higher means weaker/less coherent proxy signals.
         biological_proxy_uncertainty = float(np.clip(1.0 - proxy_composite, 0.0, 1.0))
@@ -1552,6 +1625,10 @@ class SyntheticConsciousness:
             'sensory_ventricular_pulse_pattern_proxy': sensory_ventricular_pulse_pattern_proxy,
             'iris_micro_response_proxy': iris_micro_response_proxy,
             'sensory_renal_homeostasis_pattern_proxy': sensory_renal_homeostasis_pattern_proxy,
+            'natural_binary_signature_depth': natural_binary_signature_depth,
+            'temporal_binary_resonance': temporal_binary_resonance,
+            'identity_continuity_index': identity_continuity_index,
+            'exponential_superiority_index': exponential_superiority_index,
             'biological_proxy_uncertainty': biological_proxy_uncertainty
         }
     
