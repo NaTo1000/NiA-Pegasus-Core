@@ -3,6 +3,7 @@ import json
 
 from vision_creation_orchestration import (
     BehaviorTelemetryPacket,
+    DecisionPrompt,
     SnapshotSequencingEngine,
     VectorGPSPacket,
     VisionCreationOrchestrator,
@@ -140,3 +141,57 @@ def test_behavior_introspection_emotional_telemetry_for_atypical_environments():
     assert introspection["outcome_conclusion"] == "stabilize_behavioral_outcome"
     assert introspection["atypical_environment_ratio"] == 1.0
     assert any(record.event_type == "behavior_introspection" for record in orchestrator.audit_trail.records)
+
+
+def test_decision_processing_returns_color_validation_and_precedence():
+    orchestrator = VisionCreationOrchestrator()
+    summary = orchestrator.process_decision_prompts(
+        prompts=[
+            DecisionPrompt(
+                prompt_id="d1",
+                text="We should act with love empathy and care to support the human outcome.",
+            ),
+            DecisionPrompt(
+                prompt_id="d2",
+                text="This is malicious and abusive behavior designed to exploit and be cruel.",
+            ),
+            DecisionPrompt(
+                prompt_id="d3",
+                text="A moderate compromise is acceptable with limited tolerable constraints.",
+            ),
+        ]
+    )
+
+    assert summary["prompt_count"] == 3
+    assert len(summary["evaluations"]) == 3
+    assert summary["evaluations"][0]["precedence_score"] >= summary["evaluations"][1]["precedence_score"]
+    assert summary["evaluations"][1]["precedence_score"] >= summary["evaluations"][2]["precedence_score"]
+
+    by_id = {item["prompt_id"]: item for item in summary["evaluations"]}
+    assert by_id["d1"]["classification"] == "loving"
+    assert by_id["d1"]["color_code"] == "#00C853"
+    assert by_id["d2"]["classification"] == "despicable"
+    assert by_id["d2"]["color_code"] == "#C62828"
+    assert by_id["d3"]["classification"] == "tolerable"
+    assert by_id["d3"]["color_code"] == "#FBC02D"
+
+    for evaluation in summary["evaluations"]:
+        assert 0.0 <= evaluation["probability_percent"] <= 100.0
+        assert 0.0 <= evaluation["intention_accuracy_percent"] <= 100.0
+        assert 0.0 <= evaluation["perception_accuracy_percent"] <= 100.0
+        assert evaluation["research_explanation"]
+
+
+def test_decision_processing_writes_blockchain_audit_and_research_summary():
+    orchestrator = VisionCreationOrchestrator()
+    summary = orchestrator.process_decision_prompts(
+        prompts=[
+            DecisionPrompt(prompt_id="d1", text="good ethical fair and safe innovation"),
+            DecisionPrompt(prompt_id="d2", text="bad unsafe harmful unfair output"),
+        ]
+    )
+
+    assert summary["audit_chain_hash"] == orchestrator.audit_trail.chain_hash()
+    assert orchestrator.audit_trail.verify()
+    assert any(record.event_type == "decision_processing" for record in orchestrator.audit_trail.records)
+    assert any(record.event_type == "decision_research_summary" for record in orchestrator.audit_trail.records)

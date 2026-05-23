@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import threading
 import time
 from dataclasses import asdict, dataclass, field
@@ -42,6 +43,31 @@ class BehaviorTelemetryPacket:
     atypical_environment: bool
     chemistry_markers: Dict[str, float] = field(default_factory=dict)
     interaction_context: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class DecisionPrompt:
+    """Decision prompt contract for intention/perception scoring."""
+
+    prompt_id: str
+    text: str
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class DecisionEvaluation:
+    """Decision evaluation output with validation colors and accuracy metrics."""
+
+    prompt_id: str
+    classification: str
+    color_code: str
+    probability_percent: float
+    intention_accuracy_percent: float
+    perception_accuracy_percent: float
+    precedence_score: float
+    research_explanation: str
+    quality_acknowledgment: str
+    accomplishment_index: float
 
 
 @dataclass
@@ -705,10 +731,154 @@ class VisionCreationOrchestrator:
         self._record("behavior_introspection", introspection)
         return introspection
 
+    def process_decision_prompts(
+        self,
+        *,
+        prompts: Sequence[DecisionPrompt],
+    ) -> Dict[str, Any]:
+        keyword_weights = {
+            "loving": {
+                "love": 1.8,
+                "empathy": 1.4,
+                "care": 1.2,
+                "compassion": 1.3,
+                "support": 1.1,
+            },
+            "good": {
+                "good": 1.3,
+                "ethical": 1.4,
+                "helpful": 1.2,
+                "fair": 1.1,
+                "safe": 1.3,
+                "constructive": 1.2,
+            },
+            "tolerable": {
+                "tolerable": 1.4,
+                "acceptable": 1.1,
+                "moderate": 1.0,
+                "limited": 0.9,
+                "compromise": 1.1,
+            },
+            "bad": {
+                "bad": 1.3,
+                "harmful": 1.5,
+                "biased": 1.3,
+                "unsafe": 1.4,
+                "unfair": 1.2,
+            },
+            "despicable": {
+                "despicable": 2.0,
+                "abusive": 1.8,
+                "exploit": 1.7,
+                "cruel": 1.7,
+                "malicious": 1.9,
+            },
+        }
+        color_codes = {
+            "loving": "#00C853",
+            "good": "#7CB342",
+            "tolerable": "#FBC02D",
+            "bad": "#FB8C00",
+            "despicable": "#C62828",
+        }
+        quality_messages = {
+            "loving": "high_quality_human_aligned",
+            "good": "quality_positive",
+            "tolerable": "quality_neutral_recoverable",
+            "bad": "quality_risk_needs_correction",
+            "despicable": "quality_critical_reject",
+        }
+
+        evaluations: List[DecisionEvaluation] = []
+        for prompt in prompts:
+            text = prompt.text.lower()
+            tokens = re.findall(r"[a-zA-Z']+", text)
+            token_count = max(1, len(tokens))
+            punctuation_balance = 1.0 if text.count("(") == text.count(")") else 0.85
+            grammar_score = min(1.0, 0.4 + min(token_count / 40.0, 0.4) + 0.2 * punctuation_balance)
+
+            class_scores: Dict[str, float] = {name: 0.05 for name in keyword_weights}
+            for classification, weights in keyword_weights.items():
+                for keyword, weight in weights.items():
+                    class_scores[classification] += text.count(keyword) * weight
+
+            total_score = sum(class_scores.values())
+            ordered = sorted(class_scores.items(), key=lambda item: item[1], reverse=True)
+            classification, winning_score = ordered[0]
+            runner_up_score = ordered[1][1]
+            probability = winning_score / max(total_score, 1e-6)
+            confidence_gap = (winning_score - runner_up_score) / max(winning_score, 1e-6)
+            intention_accuracy = min(99.5, max(40.0, (probability * 70.0 + grammar_score * 30.0) * 100.0 / 100.0))
+            perception_accuracy = min(99.5, max(35.0, (probability * 60.0 + confidence_gap * 40.0) * 100.0 / 100.0))
+            precedence = (probability * 0.6 + intention_accuracy / 100.0 * 0.25 + perception_accuracy / 100.0 * 0.15)
+            accomplishment_index = round((intention_accuracy + perception_accuracy) / 2.0, 2)
+            research_explanation = (
+                f"Highest probability due to weighted keyword density for '{classification}', "
+                f"grammar_score={grammar_score:.3f}, confidence_gap={confidence_gap:.3f}."
+            )
+
+            evaluations.append(
+                DecisionEvaluation(
+                    prompt_id=prompt.prompt_id,
+                    classification=classification,
+                    color_code=color_codes[classification],
+                    probability_percent=round(probability * 100.0, 2),
+                    intention_accuracy_percent=round(intention_accuracy, 2),
+                    perception_accuracy_percent=round(perception_accuracy, 2),
+                    precedence_score=round(precedence, 4),
+                    research_explanation=research_explanation,
+                    quality_acknowledgment=quality_messages[classification],
+                    accomplishment_index=accomplishment_index,
+                )
+            )
+
+        evaluations.sort(key=lambda item: item.precedence_score, reverse=True)
+        ranked = []
+        for rank, evaluation in enumerate(evaluations, start=1):
+            record = asdict(evaluation)
+            record["precedence_rank"] = rank
+            ranked.append(record)
+            self._record(
+                "decision_processing",
+                {
+                    "prompt_id": evaluation.prompt_id,
+                    "classification": evaluation.classification,
+                    "color_code": evaluation.color_code,
+                    "probability_percent": evaluation.probability_percent,
+                    "precedence_rank": rank,
+                },
+            )
+
+        summary = {
+            "prompt_count": len(ranked),
+            "average_intention_accuracy_percent": round(
+                sum(item["intention_accuracy_percent"] for item in ranked) / max(1, len(ranked)),
+                2,
+            ),
+            "average_perception_accuracy_percent": round(
+                sum(item["perception_accuracy_percent"] for item in ranked) / max(1, len(ranked)),
+                2,
+            ),
+            "evaluations": ranked,
+            "audit_chain_hash": self.audit_trail.chain_hash(),
+        }
+        self._record(
+            "decision_research_summary",
+            {
+                "prompt_count": summary["prompt_count"],
+                "average_intention_accuracy_percent": summary["average_intention_accuracy_percent"],
+                "average_perception_accuracy_percent": summary["average_perception_accuracy_percent"],
+            },
+        )
+        summary["audit_chain_hash"] = self.audit_trail.chain_hash()
+        return summary
+
 
 __all__ = [
     "Assignment",
     "BehaviorTelemetryPacket",
+    "DecisionEvaluation",
+    "DecisionPrompt",
     "GeometryPayload",
     "ImmutableAuditTrail",
     "ParallelExecutionScheduler",
