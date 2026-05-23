@@ -143,6 +143,8 @@ def test_behavior_introspection_emotional_telemetry_for_atypical_environments():
     assert introspection["inferred_intention"] == "defensive_withdrawal"
     assert introspection["outcome_conclusion"] == "stabilize_behavioral_outcome"
     assert introspection["atypical_environment_ratio"] == 1.0
+    assert introspection["chemical_reaction_detail"]["scientific_method"]["model"] == "emotion_chemistry_coupled_inference"
+    assert introspection["chemical_reaction_detail"]["indices"]["harm_probability_percent"] >= 0.0
     assert any(record.event_type == "behavior_introspection" for record in orchestrator.audit_trail.records)
 
 
@@ -177,11 +179,19 @@ def test_decision_processing_returns_color_validation_and_precedence():
     assert by_id["d2"]["color_code"] == "#C62828"
     assert by_id["d3"]["classification"] == "tolerable"
     assert by_id["d3"]["color_code"] == "#FBC02D"
+    assert "souldoctrine_core_directive" in summary
+    assert "LOVE" in summary["souldoctrine_core_directive"]
 
     for evaluation in summary["evaluations"]:
         assert 0.0 <= evaluation["probability_percent"] <= 100.0
         assert 0.0 <= evaluation["intention_accuracy_percent"] <= 100.0
         assert 0.0 <= evaluation["perception_accuracy_percent"] <= 100.0
+        assert 0.0 <= evaluation["quantum_reasoning_score"] <= 1.0
+        assert 0.0 <= evaluation["harm_intolerance_risk_percent"] <= 100.0
+        assert "chemical_markers" in evaluation["chemical_action_profile"]
+        assert "LOVE" in evaluation["souldoctrine_alignment"]
+        assert "ai_councillors_deliberation" in evaluation["councillor_deliberation"]
+        assert evaluation["digital_research_record"]["record_type"] == "decision_intent_trace"
         assert evaluation["research_explanation"]
 
 

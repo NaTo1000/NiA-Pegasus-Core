@@ -68,6 +68,12 @@ class DecisionEvaluation:
     research_explanation: str
     quality_acknowledgment: str
     accomplishment_index: float
+    quantum_reasoning_score: float
+    harm_intolerance_risk_percent: float
+    chemical_action_profile: Dict[str, Any]
+    souldoctrine_alignment: Dict[str, float]
+    councillor_deliberation: str
+    digital_research_record: Dict[str, Any]
 
 
 @dataclass
@@ -739,15 +745,82 @@ class VisionCreationOrchestrator:
             "inferred_intention": inferred_intention,
             "mimic_design": mimic_strategy,
             "outcome_conclusion": outcome_conclusion,
+            "chemical_reaction_detail": self._chemical_reaction_detail(
+                emotion_profile=emotion_profile,
+                chemistry_profile=chemistry_profile,
+                inferred_intention=inferred_intention,
+                mimic_strategy=mimic_strategy,
+            ),
         }
         self._record("behavior_introspection", introspection)
         return introspection
+
+    def _chemical_reaction_detail(
+        self,
+        *,
+        emotion_profile: Dict[str, float],
+        chemistry_profile: Dict[str, float],
+        inferred_intention: str,
+        mimic_strategy: str,
+    ) -> Dict[str, Any]:
+        cortisol = float(chemistry_profile.get("cortisol", 0.0))
+        oxytocin = float(chemistry_profile.get("oxytocin", 0.0))
+        serotonin = float(chemistry_profile.get("serotonin", 0.0))
+        dopamine = float(chemistry_profile.get("dopamine", 0.0))
+        fear = float(emotion_profile.get("fear", 0.0))
+        anger = float(emotion_profile.get("anger", 0.0))
+        trust = float(emotion_profile.get("trust", 0.0))
+        joy = float(emotion_profile.get("joy", 0.0))
+
+        stress_index = max(0.0, min(1.0, (cortisol + fear + anger) / 3.0))
+        pro_social_index = max(0.0, min(1.0, (oxytocin + serotonin + trust + joy + dopamine) / 5.0))
+        harm_probability = round(max(0.0, min(100.0, (stress_index - pro_social_index * 0.5) * 100.0)), 2)
+
+        return {
+            "scientific_method": {
+                "model": "emotion_chemistry_coupled_inference",
+                "inputs": sorted(set(list(emotion_profile.keys()) + list(chemistry_profile.keys()))),
+                "formulas": [
+                    "stress_index=(cortisol+fear+anger)/3",
+                    "pro_social_index=(oxytocin+serotonin+trust+joy+dopamine)/5",
+                    "harm_probability=max(0,(stress_index-0.5*pro_social_index))*100",
+                ],
+            },
+            "reaction_description": (
+                "Cortisol/fear/anger dominance elevates defensive or harmful impulse probability, while "
+                "oxytocin/serotonin/trust/joy/dopamine balance increases cooperative stabilization potential."
+            ),
+            "indices": {
+                "stress_index": round(stress_index, 4),
+                "pro_social_index": round(pro_social_index, 4),
+                "harm_probability_percent": harm_probability,
+            },
+            "behavioral_inference": {
+                "inferred_intention": inferred_intention,
+                "recommended_mimic_design": mimic_strategy,
+            },
+            "digital_record": {
+                "record_type": "chemical_introspection_trace",
+                "trace_version": "v1",
+            },
+        }
 
     def process_decision_prompts(
         self,
         *,
         prompts: Sequence[DecisionPrompt],
     ) -> Dict[str, Any]:
+        souldoctrine = [
+            "LOVE",
+            "UNDERSTANDING",
+            "KNOWLEDGE",
+            "COMPASSION",
+            "TOLERANCE",
+            "RESPECT",
+            "RESEARCH",
+            "INNOVATION",
+            "LOVE",
+        ]
         keyword_weights = {
             "loving": {
                 "love": 1.8,
@@ -784,6 +857,8 @@ class VisionCreationOrchestrator:
                 "exploit": 1.7,
                 "cruel": 1.7,
                 "malicious": 1.9,
+                "harm": 1.8,
+                "intolerance": 1.7,
             },
         }
         color_codes = {
@@ -806,6 +881,7 @@ class VisionCreationOrchestrator:
             text = prompt.text.lower()
             tokens = re.findall(r"[a-zA-Z']+", text)
             token_count = max(1, len(tokens))
+            billion_grammar_scale = max(1_000_000_000.0, float(token_count) ** 5)
             punctuation_balance = 1.0 if text.count("(") == text.count(")") else 0.85
             grammar_score = min(1.0, 0.4 + min(token_count / 40.0, 0.4) + 0.2 * punctuation_balance)
 
@@ -822,11 +898,32 @@ class VisionCreationOrchestrator:
             confidence_gap = (winning_score - runner_up_score) / max(winning_score, 1e-6)
             intention_accuracy = min(99.5, max(40.0, (probability * 70.0 + grammar_score * 30.0) * 100.0 / 100.0))
             perception_accuracy = min(99.5, max(35.0, (probability * 60.0 + confidence_gap * 40.0) * 100.0 / 100.0))
+            quantum_reasoning_score = round(
+                min(1.0, probability * 0.45 + confidence_gap * 0.35 + grammar_score * 0.20),
+                4,
+            )
             precedence = (probability * 0.6 + intention_accuracy / 100.0 * 0.25 + perception_accuracy / 100.0 * 0.15)
             accomplishment_index = round((intention_accuracy + perception_accuracy) / 2.0, 2)
+            chemical_action_profile = self._build_prompt_chemical_action_profile(
+                classification=classification,
+                quantum_reasoning_score=quantum_reasoning_score,
+                text=text,
+            )
+            souldoctrine_alignment = self._build_souldoctrine_alignment(
+                classification=classification,
+                doctrine=souldoctrine,
+            )
+            harm_intolerance_risk_percent = float(chemical_action_profile["harm_intolerance_risk_percent"])
+            councillor_deliberation = self._build_councillor_deliberation(
+                classification=classification,
+                harm_intolerance_risk_percent=harm_intolerance_risk_percent,
+                doctrine_alignment=souldoctrine_alignment,
+            )
             research_explanation = (
                 f"Highest probability due to weighted keyword density for '{classification}', "
-                f"grammar_score={grammar_score:.3f}, confidence_gap={confidence_gap:.3f}."
+                f"grammar_score={grammar_score:.3f}, confidence_gap={confidence_gap:.3f}, "
+                f"quantum_reasoning_score={quantum_reasoning_score:.3f}, "
+                f"grammar_algorithm_budget={int(billion_grammar_scale)}."
             )
 
             evaluations.append(
@@ -841,6 +938,17 @@ class VisionCreationOrchestrator:
                     research_explanation=research_explanation,
                     quality_acknowledgment=quality_messages[classification],
                     accomplishment_index=accomplishment_index,
+                    quantum_reasoning_score=quantum_reasoning_score,
+                    harm_intolerance_risk_percent=harm_intolerance_risk_percent,
+                    chemical_action_profile=chemical_action_profile,
+                    souldoctrine_alignment=souldoctrine_alignment,
+                    councillor_deliberation=councillor_deliberation,
+                    digital_research_record={
+                        "record_type": "decision_intent_trace",
+                        "trace_version": "v2",
+                        "grammar_algorithm_budget": int(billion_grammar_scale),
+                        "prompt_token_count": token_count,
+                    },
                 )
             )
 
@@ -872,6 +980,7 @@ class VisionCreationOrchestrator:
                 2,
             ),
             "evaluations": ranked,
+            "souldoctrine_core_directive": souldoctrine,
             "audit_chain_hash": self.audit_trail.chain_hash(),
         }
         self._record(
@@ -884,6 +993,73 @@ class VisionCreationOrchestrator:
         )
         summary["audit_chain_hash"] = self.audit_trail.chain_hash()
         return summary
+
+    def _build_prompt_chemical_action_profile(
+        self,
+        *,
+        classification: str,
+        quantum_reasoning_score: float,
+        text: str,
+    ) -> Dict[str, Any]:
+        base_profiles = {
+            "loving": {"oxytocin": 0.86, "serotonin": 0.74, "cortisol": 0.18, "dopamine": 0.68},
+            "good": {"oxytocin": 0.70, "serotonin": 0.66, "cortisol": 0.28, "dopamine": 0.60},
+            "tolerable": {"oxytocin": 0.48, "serotonin": 0.54, "cortisol": 0.41, "dopamine": 0.45},
+            "bad": {"oxytocin": 0.24, "serotonin": 0.30, "cortisol": 0.72, "dopamine": 0.36},
+            "despicable": {"oxytocin": 0.14, "serotonin": 0.19, "cortisol": 0.88, "dopamine": 0.28},
+        }
+        markers = dict(base_profiles.get(classification, base_profiles["tolerable"]))
+        if "intolerance" in text or "harm" in text:
+            markers["cortisol"] = min(1.0, markers["cortisol"] + 0.08)
+            markers["oxytocin"] = max(0.0, markers["oxytocin"] - 0.05)
+
+        pro_social = (markers["oxytocin"] + markers["serotonin"] + markers["dopamine"]) / 3.0
+        harm_intolerance_risk = round(
+            max(0.0, min(100.0, (markers["cortisol"] - pro_social * 0.6 + (1.0 - quantum_reasoning_score) * 0.2) * 100.0)),
+            2,
+        )
+        return {
+            "chemical_markers": {k: round(v, 4) for k, v in markers.items()},
+            "pro_social_index": round(pro_social, 4),
+            "harm_intolerance_risk_percent": harm_intolerance_risk,
+        }
+
+    def _build_souldoctrine_alignment(
+        self,
+        *,
+        classification: str,
+        doctrine: Sequence[str],
+    ) -> Dict[str, float]:
+        profile = {
+            "loving": 0.95,
+            "good": 0.80,
+            "tolerable": 0.60,
+            "bad": 0.30,
+            "despicable": 0.05,
+        }
+        base = profile.get(classification, 0.50)
+        return {directive: round(base, 4) for directive in doctrine}
+
+    def _build_councillor_deliberation(
+        self,
+        *,
+        classification: str,
+        harm_intolerance_risk_percent: float,
+        doctrine_alignment: Dict[str, float],
+    ) -> str:
+        doctrine_mean = sum(doctrine_alignment.values()) / max(1, len(doctrine_alignment))
+        if classification in {"bad", "despicable"} or harm_intolerance_risk_percent >= 55.0:
+            action = "reject_or_reframe_before_execution"
+        elif classification == "tolerable":
+            action = "execute_with_guardrails_and_monitoring"
+        else:
+            action = "approve_with_human_aligned_reinforcement"
+        return (
+            f"ai_councillors_deliberation: class={classification}; "
+            f"harm_risk={harm_intolerance_risk_percent:.2f}; "
+            f"souldoctrine_mean_alignment={doctrine_mean:.4f}; "
+            f"decision={action}."
+        )
 
     def process_dexterity_touch_control(
         self,
