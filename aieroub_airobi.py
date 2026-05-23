@@ -193,6 +193,9 @@ class AiRobI:
         data_payloads: Optional[Dict[str, Any]] = None,
         mcp_servers: Optional[List[Callable[[str], Any]]] = None,
         https_urls: Optional[List[str]] = None,
+        path_metrics: Optional[Dict[str, Dict[str, float]]] = None,
+        mesh_relays: Optional[Dict[str, List[str]]] = None,
+        mesh_link_health: Optional[Dict[str, float]] = None,
     ) -> Dict[str, Any]:
         """Create one innovation output batch from the current error set."""
         timestamp = time.time()
@@ -200,6 +203,7 @@ class AiRobI:
         for error in errors:
             topic = self.classify_error_code(error)
             resource_key = f"{topic}.json"
+            trace = None
             try:
                 research_payload, trace = self.orchestrator.resolve_resource(
                     resource_key=resource_key,
@@ -207,6 +211,9 @@ class AiRobI:
                     data_payloads=data_payloads,
                     mcp_servers=mcp_servers,
                     https_urls=https_urls,
+                    path_metrics=path_metrics,
+                    mesh_relays=mesh_relays,
+                    mesh_link_health=mesh_link_health,
                 )
                 channel = trace.selected_channel
                 path = trace.selected_path
@@ -218,6 +225,12 @@ class AiRobI:
                 rationale = "fallback_to_internal_heuristics"
 
             recommendation = self._build_recommendation(error, topic, research_payload, rationale)
+            if trace is not None:
+                self._audit_orchestration_trace(
+                    error=error,
+                    topic=topic,
+                    trace=trace,
+                )
             updates.append(
                 InnovationUpdate(
                     error_code=error.code,
@@ -234,7 +247,7 @@ class AiRobI:
                 )
             )
             self.audit_engine.append_record(
-                event_type="thought_change",
+                event_type="thought",
                 spec_instruction="Generate innovation update from error return signal",
                 reason_why="Maintain resilient, ethical, and continuously improved behavior under runtime errors",
                 method_how="Classify error code, gather researched context via fallback channels, and emit a sandbox-first recommendation",
@@ -292,7 +305,7 @@ class AiRobI:
             "ended_at": time.time(),
         }
         self.audit_engine.append_record(
-            event_type="alteration",
+            event_type="change",
             spec_instruction="Execute AiRobI sandbox validation for update",
             reason_why="Ensure proposed innovations are validated before external deployment",
             method_how="Run test executor in sandbox context and persist outcome in immutable audit chain",
@@ -315,6 +328,9 @@ class AiRobI:
         data_payloads: Optional[Dict[str, Any]] = None,
         mcp_servers: Optional[List[Callable[[str], Any]]] = None,
         https_urls: Optional[List[str]] = None,
+        path_metrics: Optional[Dict[str, Dict[str, float]]] = None,
+        mesh_relays: Optional[Dict[str, List[str]]] = None,
+        mesh_link_health: Optional[Dict[str, float]] = None,
     ) -> List[Dict[str, Any]]:
         """Continuously produce update batches from live error signals."""
         batches: List[Dict[str, Any]] = []
@@ -326,6 +342,9 @@ class AiRobI:
                 data_payloads=data_payloads,
                 mcp_servers=mcp_servers,
                 https_urls=https_urls,
+                path_metrics=path_metrics,
+                mesh_relays=mesh_relays,
+                mesh_link_health=mesh_link_health,
             )
             batch["sequence"] = index
             batches.append(batch)
@@ -340,6 +359,50 @@ class AiRobI:
     def verify_audit_chain(self) -> bool:
         """Verify immutable blockchain-style hash chain integrity."""
         return self.audit_engine.verify_chain()
+
+    def _audit_orchestration_trace(
+        self,
+        *,
+        error: ErrorReturnSignal,
+        topic: str,
+        trace: Any,
+    ) -> None:
+        for decision in trace.multiplexing_decisions:
+            self.audit_engine.append_record(
+                event_type="thought",
+                spec_instruction="Evaluate adaptive multiplexer network route",
+                reason_why="Select the healthiest and most efficient route under latency/bandwidth/load/mesh constraints",
+                method_how="Score candidate paths and choose the best-scoring route per attempt",
+                details={
+                    "error_code": error.code,
+                    "topic": topic,
+                    "attempt": decision.get("attempt"),
+                    "selected_channel": decision.get("selected_channel"),
+                    "selected_path": decision.get("selected_path"),
+                    "score": decision.get("score"),
+                    "latency": decision.get("latency"),
+                    "bandwidth": decision.get("bandwidth"),
+                    "multiplex_load": decision.get("multiplex_load"),
+                    "mesh_health": decision.get("mesh_health"),
+                    "mesh_hops": decision.get("mesh_hops"),
+                },
+            )
+        for event in trace.mesh_failover_events:
+            self.audit_engine.append_record(
+                event_type="change",
+                spec_instruction="Apply mesh relay failover after route degradation",
+                reason_why="Sustain service continuity when primary links fail or degrade",
+                method_how="Promote relay candidates and reseat the multiplexer on healthier mesh routes",
+                details={
+                    "error_code": error.code,
+                    "topic": topic,
+                    "attempt": event.get("attempt"),
+                    "failed_channel": event.get("failed_channel"),
+                    "failed_path": event.get("failed_path"),
+                    "error": event.get("error"),
+                    "relays": event.get("relays"),
+                },
+            )
 
     def _build_recommendation(
         self,

@@ -94,3 +94,104 @@ def test_controller_workflow_monitoring_integration(tmp_path):
     assert payload == "hello"
     assert controller.workflow_monitor_log
     assert controller.workflow_monitor_log[-1]["selected_channel"] == "file"
+
+
+def test_low_latency_path_preference_selects_faster_route():
+    orchestrator = ProtocolWorkflowOrchestrator()
+
+    def mcp_server(_: str):
+        return {"source": "mcp"}
+
+    payload, trace = orchestrator.resolve_resource(
+        resource_key="resource_a",
+        data_payloads={"resource_a": {"source": "data"}},
+        mcp_servers=[mcp_server],
+        path_metrics={
+            "data:resource_a": {"latency": 0.9, "bandwidth": 100.0, "mesh_health": 1.0},
+            "mcp:0": {"latency": 0.02, "bandwidth": 10.0, "mesh_health": 1.0},
+        },
+    )
+
+    assert payload["source"] == "mcp"
+    assert trace.selected_channel == "mcp"
+    assert trace.multiplexing_decisions[0]["selected_path"] == "mcp:0"
+
+
+def test_high_bandwidth_path_preference_selects_richer_route():
+    orchestrator = ProtocolWorkflowOrchestrator()
+    orchestrator._read_https_source = lambda url: {"source": url}  # type: ignore[method-assign]
+
+    payload, trace = orchestrator.resolve_resource(
+        resource_key="resource_a",
+        data_payloads={"resource_a": {"source": "data"}},
+        https_urls=["https://mesh.node/a"],
+        path_metrics={
+            "data:resource_a": {"latency": 0.1, "bandwidth": 5.0, "mesh_health": 1.0},
+            "https://mesh.node/a": {"latency": 0.1, "bandwidth": 10_000.0, "mesh_health": 1.0},
+        },
+    )
+
+    assert payload["source"] == "https://mesh.node/a"
+    assert trace.selected_channel == "https"
+    assert trace.selected_path == "https://mesh.node/a"
+
+
+def test_multiplexing_under_contention_reselects_less_loaded_channel():
+    orchestrator = ProtocolWorkflowOrchestrator()
+    orchestrator.channel_active_load["data"] = orchestrator.channel_capacity["data"]
+
+    def mcp_server(_: str):
+        return {"source": "mcp"}
+
+    payload, trace = orchestrator.resolve_resource(
+        resource_key="resource_a",
+        data_payloads={"resource_a": {"source": "data"}},
+        mcp_servers=[mcp_server],
+        path_metrics={
+            "data:resource_a": {"latency": 0.1, "bandwidth": 100.0, "mesh_health": 1.0},
+            "mcp:0": {"latency": 0.1, "bandwidth": 100.0, "mesh_health": 1.0},
+        },
+    )
+
+    assert payload["source"] == "mcp"
+    assert trace.selected_channel == "mcp"
+    assert trace.multiplexing_decisions[0]["multiplex_load"] < 1.0
+
+
+def test_mesh_relay_failover_and_https_arrest_behavior():
+    orchestrator = ProtocolWorkflowOrchestrator(max_failures=2, cooldown_seconds=10.0)
+    now = time.time()
+    orchestrator.policies["file"].arrested_until = now + 5.0
+    orchestrator.policies["data"].arrested_until = now + 5.0
+    orchestrator.policies["mcp"].arrested_until = now + 5.0
+
+    def fake_https(url: str):
+        if url == "https://primary.mesh/path":
+            raise RuntimeError("link degraded")
+        return {"source": url}
+
+    orchestrator._read_https_source = fake_https  # type: ignore[method-assign]
+    payload, trace = orchestrator.resolve_resource(
+        resource_key="resource_a",
+        https_urls=["https://primary.mesh/path"],
+        mesh_relays={"https://primary.mesh/path": ["https://relay.mesh/path"]},
+        path_metrics={
+            "https://primary.mesh/path": {"latency": 0.1, "bandwidth": 50.0, "mesh_health": 0.1},
+            "https://relay.mesh/path": {"latency": 0.2, "bandwidth": 70.0, "mesh_health": 0.95},
+        },
+    )
+    assert payload["source"] == "https://relay.mesh/path"
+    assert trace.selected_path == "https://relay.mesh/path"
+    assert trace.mesh_failover_events
+
+    with pytest.raises(RuntimeError):
+        orchestrator.resolve_resource(
+            resource_key="resource_a",
+            https_urls=["https://primary.mesh/path"],
+        )
+    with pytest.raises(RuntimeError):
+        orchestrator.resolve_resource(
+            resource_key="resource_a",
+            https_urls=["https://primary.mesh/path"],
+        )
+    assert orchestrator.policies["https"].is_arrested()

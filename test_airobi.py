@@ -1,7 +1,9 @@
 import asyncio
 import json
+import time
 
 from aieroub_airobi import AiRobI, ErrorReturnSignal, InnovationUpdate
+from protocol_orchestration import ProtocolWorkflowOrchestrator
 
 
 def test_airobi_classifies_error_codes():
@@ -79,3 +81,34 @@ def test_airobi_public_audit_export_is_available_for_third_party_review(tmp_path
     persisted = json.loads(output.read_text(encoding="utf-8"))
     assert len(exported) == len(persisted)
     assert persisted[0]["record_hash"]
+
+
+def test_airobi_audits_multiplexing_and_mesh_failover_events():
+    orchestrator = ProtocolWorkflowOrchestrator(max_failures=3)
+    now = time.time()
+    orchestrator.policies["file"].arrested_until = now + 10
+    orchestrator.policies["data"].arrested_until = now + 10
+    orchestrator.policies["mcp"].arrested_until = now + 10
+
+    def fake_https(url: str):
+        if "primary" in url:
+            raise RuntimeError("primary down")
+        return {"pattern": "mesh relay"}
+
+    orchestrator._read_https_source = fake_https  # type: ignore[method-assign]
+    engine = AiRobI(orchestrator=orchestrator)
+    batch = engine.generate_update_batch(
+        errors=[ErrorReturnSignal(code=503, message="service down", component="gateway")],
+        https_urls=["https://primary.mesh/topic.json"],
+        mesh_relays={"https://primary.mesh/topic.json": ["https://relay.mesh/topic.json"]},
+        path_metrics={
+            "https://primary.mesh/topic.json": {"latency": 0.2, "bandwidth": 25.0, "mesh_health": 0.1},
+            "https://relay.mesh/topic.json": {"latency": 0.3, "bandwidth": 50.0, "mesh_health": 0.9},
+        },
+    )
+
+    assert batch["count"] == 1
+    events = [record.event_type for record in engine.audit_engine.records]
+    assert "thought" in events
+    assert "change" in events
+    assert "creation" in events

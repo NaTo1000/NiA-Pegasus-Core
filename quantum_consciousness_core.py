@@ -2333,7 +2333,10 @@ class QuantumRoboticController:
                                       file_paths: Optional[List[str]] = None,
                                       data_payloads: Optional[Dict[str, Any]] = None,
                                       mcp_servers: Optional[List[Callable[[str], Any]]] = None,
-                                      https_urls: Optional[List[str]] = None) -> Any:
+                                      https_urls: Optional[List[str]] = None,
+                                      path_metrics: Optional[Dict[str, Dict[str, float]]] = None,
+                                      mesh_relays: Optional[Dict[str, List[str]]] = None,
+                                      mesh_link_health: Optional[Dict[str, float]] = None) -> Any:
         """Resolve workflow resources with chained fallback and arrest safeguards."""
         payload, trace = self.protocol_orchestrator.resolve_resource(
             resource_key=resource_key,
@@ -2341,12 +2344,20 @@ class QuantumRoboticController:
             data_payloads=data_payloads,
             mcp_servers=mcp_servers,
             https_urls=https_urls,
+            path_metrics=path_metrics,
+            mesh_relays=mesh_relays,
+            mesh_link_health=mesh_link_health,
         )
         self.workflow_monitor_log.append({
             "resource_key": trace.resource_key,
             "success": trace.success,
             "selected_channel": trace.selected_channel,
             "selected_path": trace.selected_path,
+            "selected_path_score": trace.selected_path_score,
+            "latency_snapshot": trace.latency_snapshot,
+            "bandwidth_snapshot": trace.bandwidth_snapshot,
+            "multiplexing_decisions": trace.multiplexing_decisions,
+            "mesh_failover_events": trace.mesh_failover_events,
             "steps": trace.steps,
             "errors": trace.errors,
             "started_at": trace.started_at,
