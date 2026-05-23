@@ -2,6 +2,7 @@ import hashlib
 import json
 
 from vision_creation_orchestration import (
+    BehaviorTelemetryPacket,
     SnapshotSequencingEngine,
     VectorGPSPacket,
     VisionCreationOrchestrator,
@@ -96,3 +97,46 @@ def test_report_reattach_and_export_bundle_integrity():
         encoded = json.dumps(attachment.payload, sort_keys=True, default=str).encode("utf-8")
         checksum = hashlib.sha256(encoded).hexdigest()
         assert attachment.checksum_sha256 == checksum
+
+
+def test_behavior_introspection_emotional_telemetry_for_atypical_environments():
+    orchestrator = VisionCreationOrchestrator()
+    telemetry = [
+        BehaviorTelemetryPacket(
+            sample_id="s1",
+            emotion_signals={"fear": 0.8, "trust": 0.2},
+            social_isolation_index=0.9,
+            atypical_environment=True,
+            chemistry_markers={"cortisol": 0.7, "serotonin": 0.2},
+            interaction_context={"setting": "high-noise"},
+        ),
+        BehaviorTelemetryPacket(
+            sample_id="s2",
+            emotion_signals={"fear": 0.7, "anger": 0.6, "trust": 0.1},
+            social_isolation_index=0.8,
+            atypical_environment=True,
+            chemistry_markers={"cortisol": 0.8, "oxytocin": 0.1},
+            interaction_context={"setting": "crowded"},
+        ),
+    ]
+
+    bundle = orchestrator.run_vision_creation_pipeline(
+        mission_id="mission-telemetry",
+        cad_assets=[{"asset_id": "cad-1", "vertices": [[0, 0, 0]], "faces": [[0, 0, 0]]}],
+        snapshots=[f"snap-{idx}" for idx in range(5)],
+        vector_packets=[
+            VectorGPSPacket(
+                vector_id="vec-1",
+                vector=[0.1, 0.2, 0.3],
+                gps={"lat": 1.0, "lon": 2.0},
+                sensory={"audio": 0.6},
+            )
+        ],
+        telemetry_packets=telemetry,
+    )
+
+    introspection = bundle.topology_analysis["dimension_4d"]["behavior_introspection"]
+    assert introspection["inferred_intention"] == "defensive_withdrawal"
+    assert introspection["outcome_conclusion"] == "stabilize_behavioral_outcome"
+    assert introspection["atypical_environment_ratio"] == 1.0
+    assert any(record.event_type == "behavior_introspection" for record in orchestrator.audit_trail.records)

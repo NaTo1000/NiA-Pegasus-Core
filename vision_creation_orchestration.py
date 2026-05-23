@@ -33,6 +33,18 @@ class VectorGPSPacket:
 
 
 @dataclass
+class BehaviorTelemetryPacket:
+    """Emotional telemetry contract for behavior perception and introspection."""
+
+    sample_id: str
+    emotion_signals: Dict[str, float]
+    social_isolation_index: float
+    atypical_environment: bool
+    chemistry_markers: Dict[str, float] = field(default_factory=dict)
+    interaction_context: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class SnapshotBatch:
     """Chunked snapshot sequencing contract."""
 
@@ -478,6 +490,7 @@ class VisionCreationOrchestrator:
         cad_assets: Sequence[Dict[str, Any]],
         snapshots: Sequence[str],
         vector_packets: Sequence[VectorGPSPacket],
+        telemetry_packets: Optional[Sequence[BehaviorTelemetryPacket]] = None,
         failover_routes: Optional[Dict[str, Callable[[Any], Any]]] = None,
     ) -> TwinbrainExportBundle:
         failover_routes = failover_routes or {}
@@ -537,6 +550,10 @@ class VisionCreationOrchestrator:
         stage_runs.append(stage)
         self._record_stage(stage, events)
 
+        behavior_introspection: Dict[str, Any] = {}
+        if telemetry_packets:
+            behavior_introspection = self.analyze_behavior_introspection(telemetry_packets=telemetry_packets)
+
         topology = {
             "dimension_3d": {
                 "geometry_assets": len([g for g in geometry_payloads if g is not None]),
@@ -547,6 +564,7 @@ class VisionCreationOrchestrator:
                 "temporal_layers": len(snapshot_batches),
                 "sequencing_checkpoint": checkpoint,
                 "sensory_fusion_points": len([s for s in sensory_fusion if s is not None]),
+                "behavior_introspection": behavior_introspection,
             },
         }
         self._record("topology_analysis", topology)
@@ -620,9 +638,77 @@ class VisionCreationOrchestrator:
         self.monitor_events.append({"event": event_type, **details})
         self.audit_trail.append(event_type, details)
 
+    def analyze_behavior_introspection(
+        self, *, telemetry_packets: Sequence[BehaviorTelemetryPacket]
+    ) -> Dict[str, Any]:
+        if not telemetry_packets:
+            return {}
+
+        count = len(telemetry_packets)
+        isolation = sum(max(0.0, packet.social_isolation_index) for packet in telemetry_packets) / count
+        atypical_ratio = (
+            sum(1 for packet in telemetry_packets if packet.atypical_environment) / count
+        )
+        emotion_totals: Dict[str, float] = {}
+        chemistry_totals: Dict[str, float] = {}
+        for packet in telemetry_packets:
+            for emotion, value in packet.emotion_signals.items():
+                emotion_totals[emotion] = emotion_totals.get(emotion, 0.0) + float(value)
+            for marker, value in packet.chemistry_markers.items():
+                chemistry_totals[marker] = chemistry_totals.get(marker, 0.0) + float(value)
+
+        emotion_profile = {
+            key: value / count
+            for key, value in sorted(emotion_totals.items())
+        }
+        chemistry_profile = {
+            key: value / count
+            for key, value in sorted(chemistry_totals.items())
+        }
+
+        stress_signal = (
+            emotion_profile.get("fear", 0.0)
+            + emotion_profile.get("anger", 0.0)
+            + chemistry_profile.get("cortisol", 0.0)
+        )
+        trust_signal = (
+            emotion_profile.get("trust", 0.0)
+            + chemistry_profile.get("oxytocin", 0.0)
+            + chemistry_profile.get("serotonin", 0.0)
+        )
+        if stress_signal > trust_signal * 1.2:
+            inferred_intention = "defensive_withdrawal"
+            mimic_strategy = "low_stimulus_empathy_and_space_preservation"
+        elif trust_signal > stress_signal * 1.2:
+            inferred_intention = "cooperative_engagement"
+            mimic_strategy = "collaborative_guidance_with_affirmation"
+        else:
+            inferred_intention = "uncertain_transition"
+            mimic_strategy = "observe_then_gradual_alignment"
+
+        outcome_conclusion = (
+            "stabilize_behavioral_outcome"
+            if atypical_ratio >= 0.5 or isolation >= 0.6
+            else "optimize_behavioral_outcome"
+        )
+
+        introspection = {
+            "sample_count": count,
+            "average_isolation_index": isolation,
+            "atypical_environment_ratio": atypical_ratio,
+            "emotion_profile": emotion_profile,
+            "chemistry_profile": chemistry_profile,
+            "inferred_intention": inferred_intention,
+            "mimic_design": mimic_strategy,
+            "outcome_conclusion": outcome_conclusion,
+        }
+        self._record("behavior_introspection", introspection)
+        return introspection
+
 
 __all__ = [
     "Assignment",
+    "BehaviorTelemetryPacket",
     "GeometryPayload",
     "ImmutableAuditTrail",
     "ParallelExecutionScheduler",
