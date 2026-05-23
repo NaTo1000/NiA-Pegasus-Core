@@ -4,12 +4,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import urlparse
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -176,6 +179,7 @@ class ProtocolWorkflowOrchestrator:
                 if payload is not None:
                     return payload, f"mcp:{index}", None
             except Exception as exc:  # noqa: BLE001
+                LOGGER.exception("MCP server %s failed for resource %s", index, resource_key)
                 return None, f"mcp:{index}", f"mcp_error:{type(exc).__name__}: {exc}"
         return None, "", "mcp_unavailable"
 
@@ -185,6 +189,7 @@ class ProtocolWorkflowOrchestrator:
                 payload = self._read_https_source(url)
                 return payload, url, None
             except Exception as exc:  # noqa: BLE001
+                LOGGER.exception("HTTPS source failed for url %s", url)
                 return None, url, f"https_error:{type(exc).__name__}: {exc}"
         return None, "", "https_unavailable"
 

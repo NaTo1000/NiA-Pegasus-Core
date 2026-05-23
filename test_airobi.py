@@ -1,4 +1,5 @@
 import asyncio
+import json
 
 from aieroub_airobi import AiRobI, ErrorReturnSignal, InnovationUpdate
 
@@ -53,3 +54,28 @@ def test_airobi_continuous_mode_produces_batches():
     batches = asyncio.run(engine.run_continuous(error_source=error_source, iterations=2))
     assert len(batches) == 2
     assert batches[0]["count"] == 1
+
+
+def test_airobi_audit_chain_contains_required_metadata_and_verifies():
+    engine = AiRobI()
+    engine.generate_update_batch(errors=[ErrorReturnSignal(code=500, message="service crash", component="api")])
+    records = engine.export_public_audit()
+    assert records
+    first = records[0]
+    assert first["spec_instruction"]
+    assert first["reason_why"]
+    assert first["method_how"]
+    assert first["timestamp_iso"]
+    assert first["digital_watermark_signature"]
+    assert engine.verify_audit_chain() is True
+
+
+def test_airobi_public_audit_export_is_available_for_third_party_review(tmp_path):
+    engine = AiRobI()
+    engine.generate_update_batch(errors=[ErrorReturnSignal(code=404, message="not found", component="gateway")])
+    output = tmp_path / "public_audit.json"
+    exported = engine.export_public_audit(output_path=str(output))
+    assert output.is_file()
+    persisted = json.loads(output.read_text(encoding="utf-8"))
+    assert len(exported) == len(persisted)
+    assert persisted[0]["record_hash"]

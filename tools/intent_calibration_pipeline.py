@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 
 MIN_SAMPLES_FOR_CALIBRATION = 20
-NEAR_TERM_TO_IMMEDIATE_THRESHOLD_RATIO = 0.55
+NEAR_TERM_TO_IMMEDIATE_PRESSURE_RATIO = 0.55
 LOGGER = logging.getLogger(__name__)
 
 
@@ -193,7 +193,7 @@ def calibrate(samples: Dict[str, List[CalibrationSample]]) -> Dict[str, Any]:
         },
         "routing_thresholds": {
             "immediate_pressure_threshold": immediate_threshold,
-            "near_term_pressure_threshold": max(0.1, immediate_threshold * NEAR_TERM_TO_IMMEDIATE_THRESHOLD_RATIO),
+            "near_term_pressure_threshold": max(0.1, immediate_threshold * NEAR_TERM_TO_IMMEDIATE_PRESSURE_RATIO),
             "high_indecision_threshold": float(np.clip(indecision_mean + 0.2, 0.0, 1.0)),
             "high_environmental_turbulence_threshold": float(np.clip(turbulence_mean + 0.2, 0.0, 1.0)),
             "high_proxy_uncertainty_threshold": 0.7,

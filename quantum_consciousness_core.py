@@ -55,6 +55,7 @@ DECISION_PRESSURE_WEIGHT_SUM = (
 if abs(DECISION_PRESSURE_WEIGHT_SUM - 1.0) > EPSILON:
     raise ValueError(
         f"Decision pressure weights invalid: sum={DECISION_PRESSURE_WEIGHT_SUM} "
+        f"(expected sum=1.0) "
         f"(fear={DECISION_PRESSURE_FEAR_WEIGHT}, anger={DECISION_PRESSURE_ANGER_WEIGHT}, "
         f"anticipation={DECISION_PRESSURE_ANTICIPATION_WEIGHT}, indecision={DECISION_PRESSURE_INDECISION_WEIGHT}, "
         f"one_minus_agency={DECISION_PRESSURE_ONE_MINUS_AGENCY_WEIGHT})"
@@ -1202,7 +1203,7 @@ class SyntheticConsciousness:
         anticipation_w = float(decision_weights.get("anticipation", DECISION_PRESSURE_ANTICIPATION_WEIGHT))
         indecision_w = float(decision_weights.get("indecision", DECISION_PRESSURE_INDECISION_WEIGHT))
         low_agency_w = float(decision_weights.get("low_agency", DECISION_PRESSURE_ONE_MINUS_AGENCY_WEIGHT))
-        weight_sum = fear_w + anger_w + anticipation_w + indecision_w + low_agency_w + EPSILON
+        weight_sum = fear_w + anger_w + anticipation_w + indecision_w + low_agency_w
 
         pressure = float(np.clip(
             (
@@ -1883,15 +1884,15 @@ class SyntheticConsciousness:
             return [], 0.0, 0.0, 1.0
         quality_mean = float(np.mean(quality_scores)) if quality_scores else 0.0
         cadence_mean = float(np.mean(cadence_scores)) if cadence_scores else 0.0
-        missing_mean = float(np.mean(missing_ratios)) if missing_ratios else 1.0
-        return sensory_series, quality_mean, cadence_mean, missing_mean
+        missing_ratio_mean = float(np.mean(missing_ratios)) if missing_ratios else 1.0
+        return sensory_series, quality_mean, cadence_mean, missing_ratio_mean
 
     def _compute_sensory_biological_proxies(self, memories: List[Dict]) -> Dict[str, float]:
         """Estimate calibrated signal-quality and behavior-state indices from contract-bound sensory data."""
         if not memories:
             return self._empty_signal_proxy_indices()
 
-        sensory_series, quality_mean, cadence_mean, missing_mean = self._extract_sensory_contract_series(memories)
+        sensory_series, quality_mean, cadence_mean, missing_ratio_mean = self._extract_sensory_contract_series(memories)
         if not sensory_series:
             return self._empty_signal_proxy_indices()
 
@@ -2026,7 +2027,9 @@ class SyntheticConsciousness:
                 weighted_total += weight * value
         proxy_composite = float(weighted_total / (weight_sum + EPSILON))
 
-        input_data_quality = float(np.clip(0.4 * quality_mean + 0.4 * cadence_mean + 0.2 * (1.0 - missing_mean), 0.0, 1.0))
+        input_data_quality = float(
+            np.clip(0.4 * quality_mean + 0.4 * cadence_mean + 0.2 * (1.0 - missing_ratio_mean), 0.0, 1.0)
+        )
         input_data_quality_risk = float(np.clip(1.0 - input_data_quality, 0.0, 1.0))
         signal_proxy_uncertainty_index = float(np.clip(1.0 - proxy_composite, 0.0, 1.0))
         proxy_confidence_index = float(np.clip(1.0 - max(signal_proxy_uncertainty_index, input_data_quality_risk), 0.0, 1.0))
