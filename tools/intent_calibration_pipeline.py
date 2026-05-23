@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
@@ -12,7 +13,8 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 
 MIN_SAMPLES_FOR_CALIBRATION = 20
-NEAR_TERM_THRESHOLD_RATIO = 0.55
+NEAR_TERM_TO_IMMEDIATE_THRESHOLD_RATIO = 0.55
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -33,7 +35,7 @@ def _to_float(value: Any, default: float = 0.0) -> float:
         numeric = float(value)
     except (TypeError, ValueError):
         return default
-    return float(np.clip(numeric, 0.0, 1.0))
+    return np.clip(numeric, 0.0, 1.0).item()
 
 
 def load_samples(path: Path) -> List[CalibrationSample]:
@@ -191,7 +193,7 @@ def calibrate(samples: Dict[str, List[CalibrationSample]]) -> Dict[str, Any]:
         },
         "routing_thresholds": {
             "immediate_pressure_threshold": immediate_threshold,
-            "near_term_pressure_threshold": max(0.1, immediate_threshold * NEAR_TERM_THRESHOLD_RATIO),
+            "near_term_pressure_threshold": max(0.1, immediate_threshold * NEAR_TERM_TO_IMMEDIATE_THRESHOLD_RATIO),
             "high_indecision_threshold": float(np.clip(indecision_mean + 0.2, 0.0, 1.0)),
             "high_environmental_turbulence_threshold": float(np.clip(turbulence_mean + 0.2, 0.0, 1.0)),
             "high_proxy_uncertainty_threshold": 0.7,
@@ -237,6 +239,7 @@ def evaluate_gates(artifact: Dict[str, Any]) -> Tuple[bool, Dict[str, bool]]:
 
 
 def main() -> int:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     parser = argparse.ArgumentParser(description="Calibrate intent runtime thresholds from labeled data.")
     parser.add_argument("--input", required=True, help="Path to JSON array of labeled samples.")
     parser.add_argument("--output", required=True, help="Output artifact path.")
@@ -255,8 +258,8 @@ def main() -> int:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as handle:
         json.dump(artifact, handle, indent=2, sort_keys=True)
-    print(f"wrote artifact: {output_path}")
-    print(f"all_gates_passed={passed}")
+    LOGGER.info("wrote artifact: %s", output_path)
+    LOGGER.info("all_gates_passed=%s", passed)
     return 0
 
 

@@ -16,6 +16,8 @@ import asyncio
 import copy
 import json
 import os
+import warnings
+from pathlib import Path
 import quantum_computing as qc  # Simulated quantum interface
 from protocol_orchestration import ProtocolWorkflowOrchestrator
 from scipy.linalg import expm, sqrtm
@@ -95,10 +97,8 @@ BEHAVIOR_IMPULSIVITY_PERCENTILE = 95
 BEHAVIOR_GLANCE_SEGMENT_COUNT = 3
 
 DEFAULT_INTENT_CALIBRATION_VERSION = "intent-runtime-v1.0.0"
-DEFAULT_INTENT_CALIBRATION_PATH = os.path.join(
-    os.path.dirname(__file__),
-    "calibration",
-    "intent_runtime_calibration.v1.json"
+DEFAULT_INTENT_CALIBRATION_PATH = str(
+    Path(__file__).resolve().parent / "calibration" / "intent_runtime_calibration.v1.json"
 )
 
 DEFAULT_INTENT_CALIBRATION = {
@@ -633,6 +633,8 @@ class SyntheticConsciousness:
     def __init__(self, dimension: int = 1024):
         self.dimension = dimension
         self.intent_calibration = self._load_intent_calibration()
+        if not isinstance(self.intent_calibration, dict):
+            self.intent_calibration = copy.deepcopy(DEFAULT_INTENT_CALIBRATION)
         self.intent_calibration_version = self.intent_calibration.get("version", "unknown")
         self.consciousness_state = self._initialize_consciousness()
         self.memory_buffer = deque(maxlen=10000)
@@ -652,8 +654,12 @@ class SyntheticConsciousness:
                     external = json.load(handle)
                 if isinstance(external, dict):
                     calibration = _deep_update_dict(calibration, external)
-            except (OSError, json.JSONDecodeError, TypeError, ValueError):
-                print(f"[SyntheticConsciousness] warning: failed to load calibration artifact: {configured_path}")
+            except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+                warnings.warn(
+                    f"[SyntheticConsciousness] failed to load calibration artifact: {configured_path}: {type(exc).__name__}: {exc}",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
         return calibration
 
     def _weights_sum(self, weights: Dict[str, float]) -> float:
@@ -1823,7 +1829,7 @@ class SyntheticConsciousness:
                 sensor_type = "generic"
                 units = "normalized"
                 cadence_hz = cadence_reference_hz
-                quality_flags = ["legacy_unstructured_payload"]
+                quality_flags = ["legacy"]
                 missing_policy = "drop"
                 values = raw_payload
 

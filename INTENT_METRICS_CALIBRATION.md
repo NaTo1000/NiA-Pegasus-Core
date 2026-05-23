@@ -47,13 +47,13 @@ All indices are in `[0,1]`.
 
 ## 3) Offline calibration/evaluation pipeline
 
-Script: `${REPO_ROOT}/tools/intent_calibration_pipeline.py`
+Script: `<repo_root>/tools/intent_calibration_pipeline.py`
 
 Usage:
 ```bash
-python ${REPO_ROOT}/tools/intent_calibration_pipeline.py \
+python <repo_root>/tools/intent_calibration_pipeline.py \
   --input /absolute/path/labeled_intent_samples.json \
-  --output ${REPO_ROOT}/calibration/intent_runtime_calibration.v1.json
+  --output <repo_root>/calibration/intent_runtime_calibration.v1.json
 ```
 
 Pipeline guarantees:

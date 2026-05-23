@@ -6,6 +6,8 @@ from typing import Iterable, List
 from setuptools import setup
 
 ROOT = Path(__file__).resolve().parent
+EXCLUDED_MODULE_FILES = {"setup.py"}
+EXCLUDED_MODULE_PREFIXES = ("test_",)
 
 
 def _read_first(paths: Iterable[str], default: str = "") -> str:
@@ -25,6 +27,17 @@ def _read_requirements(paths: Iterable[str]) -> List[str]:
             continue
         requirements.append(stripped)
     return requirements
+
+
+def _discover_py_modules() -> List[str]:
+    modules: List[str] = []
+    for path in ROOT.glob("*.py"):
+        if path.name in EXCLUDED_MODULE_FILES:
+            continue
+        if path.name.startswith(EXCLUDED_MODULE_PREFIXES):
+            continue
+        modules.append(path.stem)
+    return sorted(modules)
 
 
 LONG_DESCRIPTION = _read_first(
@@ -49,18 +62,7 @@ setup(
     description="NayDoeV! Pegasus Core runtime",
     long_description=LONG_DESCRIPTION,
     long_description_content_type="text/markdown",
-    py_modules=[
-        "foo",
-        "foo_optimized",
-        "hyperdimensional_quantum_field",
-        "naydoev_core",
-        "neuromorphic_perception",
-        "protocol_orchestration",
-        "quantum_consciousness_core",
-        "quantum_validation_framework",
-        "wireless_framework",
-        "wireless_framework_optimized",
-    ],
+    py_modules=_discover_py_modules(),
     install_requires=INSTALL_REQUIRES,
     python_requires=">=3.10",
 )

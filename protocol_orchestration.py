@@ -9,6 +9,7 @@ import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
+from urllib.parse import urlparse
 
 
 @dataclass
@@ -175,7 +176,7 @@ class ProtocolWorkflowOrchestrator:
                 if payload is not None:
                     return payload, f"mcp:{index}", None
             except Exception as exc:  # noqa: BLE001
-                return None, f"mcp:{index}", f"mcp_error:{exc}"
+                return None, f"mcp:{index}", f"mcp_error:{type(exc).__name__}: {exc}"
         return None, "", "mcp_unavailable"
 
     def _from_https(self, urls: List[str]) -> Tuple[Any, str, Optional[str]]:
@@ -184,11 +185,14 @@ class ProtocolWorkflowOrchestrator:
                 payload = self._read_https_source(url)
                 return payload, url, None
             except Exception as exc:  # noqa: BLE001
-                return None, url, f"https_error:{exc}"
+                return None, url, f"https_error:{type(exc).__name__}: {exc}"
         return None, "", "https_unavailable"
 
     def _read_https_source(self, url: str) -> Any:
-        with urllib.request.urlopen(url, timeout=self.https_timeout_seconds) as response:  # noqa: S310
+        parsed = urlparse(url)
+        if parsed.scheme.lower() != "https":
+            raise ValueError(f"unsupported_url_scheme:{parsed.scheme}")
+        with urllib.request.urlopen(url, timeout=self.https_timeout_seconds) as response:
             text = response.read().decode("utf-8")
         return self._decode_payload(url, text)
 
