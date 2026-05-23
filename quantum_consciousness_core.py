@@ -17,6 +17,7 @@ import copy
 import json
 import os
 import quantum_computing as qc  # Simulated quantum interface
+from protocol_orchestration import ProtocolWorkflowOrchestrator
 from scipy.linalg import expm, sqrtm
 from scipy.special import jv, spherical_jn
 import networkx as nx
@@ -2247,7 +2248,9 @@ class QuantumRoboticController:
         self.qctrl = QCTRLOptimizer()
         self.ibm_quantum = IBMQuantumInterface()
         self.consciousness = SyntheticConsciousness()
+        self.protocol_orchestrator = ProtocolWorkflowOrchestrator()
         self.control_state = np.zeros(128)
+        self.workflow_monitor_log: List[Dict[str, Any]] = []
         
     async def generate_quantum_control(self, robot_state: Dict, 
                                       target_state: Dict) -> Dict:
@@ -2315,6 +2318,32 @@ class QuantumRoboticController:
             'gates': gates,
             'qubits': list(range(num_qubits))
         }
+
+    def orchestrate_protocol_resource(self,
+                                      resource_key: str,
+                                      file_paths: Optional[List[str]] = None,
+                                      data_payloads: Optional[Dict[str, Any]] = None,
+                                      mcp_servers: Optional[List[Callable[[str], Any]]] = None,
+                                      https_urls: Optional[List[str]] = None) -> Any:
+        """Resolve workflow resources with chained fallback and arrest safeguards."""
+        payload, trace = self.protocol_orchestrator.resolve_resource(
+            resource_key=resource_key,
+            file_paths=file_paths,
+            data_payloads=data_payloads,
+            mcp_servers=mcp_servers,
+            https_urls=https_urls,
+        )
+        self.workflow_monitor_log.append({
+            "resource_key": trace.resource_key,
+            "success": trace.success,
+            "selected_channel": trace.selected_channel,
+            "selected_path": trace.selected_path,
+            "steps": trace.steps,
+            "errors": trace.errors,
+            "started_at": trace.started_at,
+            "ended_at": trace.ended_at,
+        })
+        return payload
     
     def _state_to_unitary(self, state: Dict) -> np.ndarray:
         """Convert robot state to unitary matrix"""
