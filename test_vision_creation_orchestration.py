@@ -112,7 +112,7 @@ def test_behavior_introspection_emotional_telemetry_for_atypical_environments():
             social_isolation_index=0.9,
             atypical_environment=True,
             chemistry_markers={"cortisol": 0.7, "serotonin": 0.2},
-            interaction_context={"setting": "high-noise"},
+            interaction_context={"setting": "high-noise", "sudden_change": True, "heart_rate_bpm": 104, "ambient_temp_c": 2.5, "time_of_day": "sunrise"},
         ),
         BehaviorTelemetryPacket(
             sample_id="s2",
@@ -120,7 +120,7 @@ def test_behavior_introspection_emotional_telemetry_for_atypical_environments():
             social_isolation_index=0.8,
             atypical_environment=True,
             chemistry_markers={"cortisol": 0.8, "oxytocin": 0.1},
-            interaction_context={"setting": "crowded"},
+            interaction_context={"setting": "crowded", "imbalance_event": True, "heart_rate_bpm": 96, "ambient_temp_c": 4.0, "time_of_day": "dawn"},
         ),
     ]
 
@@ -145,6 +145,9 @@ def test_behavior_introspection_emotional_telemetry_for_atypical_environments():
     assert introspection["atypical_environment_ratio"] == 1.0
     assert introspection["chemical_reaction_detail"]["scientific_method"]["model"] == "emotion_chemistry_coupled_inference"
     assert introspection["chemical_reaction_detail"]["indices"]["harm_probability_percent"] >= 0.0
+    assert introspection["embodied_environment_trace"]["sudden_change_ratio"] > 0.0
+    assert introspection["embodied_environment_trace"]["frost_breath_likelihood"] == "high"
+    assert introspection["embodied_environment_trace"]["sunrise_transition_ratio"] == 1.0
     assert any(record.event_type == "behavior_introspection" for record in orchestrator.audit_trail.records)
 
 
@@ -181,6 +184,7 @@ def test_decision_processing_returns_color_validation_and_precedence():
     assert by_id["d3"]["color_code"] == "#FBC02D"
     assert "souldoctrine_core_directive" in summary
     assert "LOVE" in summary["souldoctrine_core_directive"]
+    assert summary["consciousness_temporal_resolution_ms"] == 1
 
     for evaluation in summary["evaluations"]:
         assert 0.0 <= evaluation["probability_percent"] <= 100.0
@@ -192,7 +196,39 @@ def test_decision_processing_returns_color_validation_and_precedence():
         assert "LOVE" in evaluation["souldoctrine_alignment"]
         assert "ai_councillors_deliberation" in evaluation["councillor_deliberation"]
         assert evaluation["digital_research_record"]["record_type"] == "decision_intent_trace"
+        assert "inner_voice_tension_index" in evaluation["digital_research_record"]
+        assert "adaptation_latency_ms" in evaluation["digital_research_record"]
+        assert evaluation["inner_voice_profile"]["dominant_inner_voice"] in {"left", "right"}
+        assert 0.0 <= evaluation["inner_voice_profile"]["tension_index"] <= 1.0
+        assert evaluation["chaos_consciousness_profile"]["temporal_window_ms"] == 1
+        assert 5 <= evaluation["chaos_consciousness_profile"]["adaptation_latency_ms"] <= 250
         assert evaluation["research_explanation"]
+
+
+def test_decision_processing_models_inner_voice_and_chaos_consciousness():
+    orchestrator = VisionCreationOrchestrator()
+    summary = orchestrator.process_decision_prompts(
+        prompts=[
+            DecisionPrompt(
+                prompt_id="d-chaos",
+                text=(
+                    "The inner voice is split, feeling chaotic after tripping and overbalancing while walking into "
+                    "something, trying to be cool but embarrassingly uncoordinated, hearing heart beats and frosty "
+                    "breath in chilly dawn as the sun rises over the horizon."
+                ),
+            )
+        ]
+    )
+
+    evaluation = summary["evaluations"][0]
+    perturbations = evaluation["chaos_consciousness_profile"]["perturbation_events"]
+    assert perturbations["trip_imbalance"] > 0
+    assert perturbations["environment_shift"] > 0
+    assert perturbations["somatic_signal"] > 0
+    assert evaluation["inner_voice_profile"]["deliberation_mode"] in {
+        "rapid_bidirectional_council",
+        "coherent_single_pass_council",
+    }
 
 
 def test_decision_processing_writes_blockchain_audit_and_research_summary():

@@ -74,6 +74,8 @@ class DecisionEvaluation:
     souldoctrine_alignment: Dict[str, float]
     councillor_deliberation: str
     digital_research_record: Dict[str, Any]
+    inner_voice_profile: Dict[str, Any]
+    chaos_consciousness_profile: Dict[str, Any]
 
 
 @dataclass
@@ -751,9 +753,44 @@ class VisionCreationOrchestrator:
                 inferred_intention=inferred_intention,
                 mimic_strategy=mimic_strategy,
             ),
+            "embodied_environment_trace": self._build_embodied_environment_trace(telemetry_packets=telemetry_packets),
         }
         self._record("behavior_introspection", introspection)
         return introspection
+
+    def _build_embodied_environment_trace(
+        self,
+        *,
+        telemetry_packets: Sequence[BehaviorTelemetryPacket],
+    ) -> Dict[str, Any]:
+        contexts = [packet.interaction_context for packet in telemetry_packets]
+        sudden_change_count = sum(
+            1
+            for context in contexts
+            if bool(context.get("sudden_change")) or bool(context.get("imbalance_event")) or bool(context.get("collision_event"))
+        )
+        heartbeat_samples = [
+            float(context.get("heart_rate_bpm", 0.0))
+            for context in contexts
+            if context.get("heart_rate_bpm") is not None
+        ]
+        ambient_temps = [
+            float(context.get("ambient_temp_c", 0.0))
+            for context in contexts
+            if context.get("ambient_temp_c") is not None
+        ]
+        dawn_mentions = sum(1 for context in contexts if str(context.get("time_of_day", "")).lower() in {"dawn", "sunrise"})
+        return {
+            "sudden_change_ratio": round(sudden_change_count / max(1, len(contexts)), 4),
+            "average_heart_rate_bpm": round(sum(heartbeat_samples) / max(1, len(heartbeat_samples)), 2),
+            "average_ambient_temp_c": round(sum(ambient_temps) / max(1, len(ambient_temps)), 2),
+            "frost_breath_likelihood": (
+                "high"
+                if ambient_temps and (sum(ambient_temps) / len(ambient_temps)) <= 5.0
+                else "moderate"
+            ),
+            "sunrise_transition_ratio": round(dawn_mentions / max(1, len(contexts)), 4),
+        }
 
     def _chemical_reaction_detail(
         self,
@@ -914,6 +951,17 @@ class VisionCreationOrchestrator:
                 doctrine=souldoctrine,
             )
             harm_intolerance_risk_percent = float(chemical_action_profile["harm_intolerance_risk_percent"])
+            inner_voice_profile = self._build_inner_voice_profile(
+                text=text,
+                classification=classification,
+                quantum_reasoning_score=quantum_reasoning_score,
+                harm_intolerance_risk_percent=harm_intolerance_risk_percent,
+            )
+            chaos_consciousness_profile = self._build_chaos_consciousness_profile(
+                text=text,
+                quantum_reasoning_score=quantum_reasoning_score,
+                inner_voice_profile=inner_voice_profile,
+            )
             councillor_deliberation = self._build_councillor_deliberation(
                 classification=classification,
                 harm_intolerance_risk_percent=harm_intolerance_risk_percent,
@@ -945,10 +993,14 @@ class VisionCreationOrchestrator:
                     councillor_deliberation=councillor_deliberation,
                     digital_research_record={
                         "record_type": "decision_intent_trace",
-                        "trace_version": "v2",
+                        "trace_version": "v3",
                         "grammar_algorithm_budget": int(billion_grammar_scale),
                         "prompt_token_count": token_count,
+                        "inner_voice_tension_index": inner_voice_profile["tension_index"],
+                        "adaptation_latency_ms": chaos_consciousness_profile["adaptation_latency_ms"],
                     },
+                    inner_voice_profile=inner_voice_profile,
+                    chaos_consciousness_profile=chaos_consciousness_profile,
                 )
             )
 
@@ -981,6 +1033,7 @@ class VisionCreationOrchestrator:
             ),
             "evaluations": ranked,
             "souldoctrine_core_directive": souldoctrine,
+            "consciousness_temporal_resolution_ms": 1,
             "audit_chain_hash": self.audit_trail.chain_hash(),
         }
         self._record(
@@ -1060,6 +1113,92 @@ class VisionCreationOrchestrator:
             f"souldoctrine_mean_alignment={doctrine_mean:.4f}; "
             f"decision={action}."
         )
+
+    def _build_inner_voice_profile(
+        self,
+        *,
+        text: str,
+        classification: str,
+        quantum_reasoning_score: float,
+        harm_intolerance_risk_percent: float,
+    ) -> Dict[str, Any]:
+        left_words = ("balance", "logic", "order", "reason", "coordinate", "precision")
+        right_words = ("feeling", "voice", "chaos", "cool", "embarrassing", "color", "horizon", "sun")
+        left_hits = sum(text.count(word) for word in left_words)
+        right_hits = sum(text.count(word) for word in right_words)
+        total = max(1, left_hits + right_hits)
+        left_weight = left_hits / total
+        right_weight = right_hits / total
+        tension_index = round(
+            max(
+                0.0,
+                min(
+                    1.0,
+                    abs(left_weight - right_weight) * 0.35
+                    + (1.0 - quantum_reasoning_score) * 0.35
+                    + (harm_intolerance_risk_percent / 100.0) * 0.30,
+                ),
+            ),
+            4,
+        )
+        return {
+            "left_brain_pitch": {
+                "weight": round(left_weight, 4),
+                "agenda": "stability_coordination_and_error_correction",
+            },
+            "right_brain_pitch": {
+                "weight": round(right_weight, 4),
+                "agenda": "identity_expression_emotional_narrative_and_social_signal",
+            },
+            "dominant_inner_voice": "left" if left_weight >= right_weight else "right",
+            "tension_index": tension_index,
+            "deliberation_mode": (
+                "rapid_bidirectional_council"
+                if classification in {"tolerable", "bad"} or tension_index >= 0.45
+                else "coherent_single_pass_council"
+            ),
+        }
+
+    def _build_chaos_consciousness_profile(
+        self,
+        *,
+        text: str,
+        quantum_reasoning_score: float,
+        inner_voice_profile: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        event_patterns = {
+            "trip_imbalance": ("trip", "tripping", "overbalance", "uncoordinated", "walking into"),
+            "social_embarrassment": ("embarrassing", "cool", "odd color", "clothing"),
+            "somatic_signal": ("heart", "stubble", "breath"),
+            "environment_shift": ("chilly", "frosty", "sunrise", "horizon", "sun"),
+        }
+        perturbations: Dict[str, int] = {}
+        for event, patterns in event_patterns.items():
+            perturbations[event] = sum(1 for pattern in patterns if pattern in text)
+        perturbation_score = sum(perturbations.values())
+        adaptation_latency_ms = int(
+            max(
+                5,
+                min(
+                    250,
+                    180
+                    - perturbation_score * 18
+                    - int(quantum_reasoning_score * 50)
+                    + int(inner_voice_profile["tension_index"] * 70),
+                ),
+            )
+        )
+        return {
+            "temporal_window_ms": 1,
+            "perturbation_events": perturbations,
+            "perturbation_density": round(perturbation_score / max(1, len(event_patterns) * 5), 4),
+            "adaptation_latency_ms": adaptation_latency_ms,
+            "conclusive_consciousness_state": (
+                "chaotic_rebalance"
+                if perturbation_score >= 3 or inner_voice_profile["tension_index"] >= 0.55
+                else "stable_deliberative_flow"
+            ),
+        }
 
     def process_dexterity_touch_control(
         self,
