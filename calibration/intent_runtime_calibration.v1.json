@@ -1,0 +1,133 @@
+{
+  "version": "intent-runtime-v1.0.0",
+  "calibration_context": {
+    "source_dataset": "synthetic_sensor_benchmark_v1",
+    "sampling_reference_hz": 50.0,
+    "exported_at_unix": 0.0
+  },
+  "routing_thresholds": {
+    "focus_detection_threshold": 0.2,
+    "immediate_pressure_threshold": 0.65,
+    "near_term_pressure_threshold": 0.35,
+    "high_indecision_threshold": 0.6,
+    "constrained_decision_pressure_threshold": 0.55,
+    "high_environmental_turbulence_threshold": 0.6,
+    "high_proxy_uncertainty_threshold": 0.7,
+    "high_data_quality_risk_threshold": 0.4,
+    "low_confidence_threshold": 0.35,
+    "exponential_surge_threshold": 0.82,
+    "max_intent_reasons": 2
+  },
+  "decision_weights": {
+    "fear": 0.35,
+    "anger": 0.2,
+    "anticipation": 0.15,
+    "indecision": 0.15,
+    "low_agency": 0.15
+  },
+  "affect_weights": {
+    "grief_base": 0.6,
+    "grief_fear": 0.4,
+    "love_base": 0.5,
+    "love_trust": 0.5,
+    "triumph_base": 0.7,
+    "triumph_commitment": 0.3,
+    "accomplishment_indecision_damping": 0.5
+  },
+  "distress_weights": {
+    "hopelessness_grief": 0.45,
+    "hopelessness_indecision": 0.3,
+    "hopelessness_low_commitment": 0.25,
+    "gut_pressure": 0.5,
+    "gut_fidget": 0.3,
+    "gut_sweat": 0.2,
+    "headache_pressure": 0.45,
+    "headache_throat": 0.35,
+    "headache_indecision": 0.2,
+    "dry_mouth_sweat": 0.55,
+    "dry_mouth_pressure": 0.25,
+    "dry_mouth_throat": 0.2
+  },
+  "binary_depth": {
+    "recursive_passes": 4,
+    "temporal_weight": 0.4,
+    "spatial_weight": 0.3,
+    "recursive_weight": 0.3,
+    "shift_base": 1,
+    "blend_factor": 0.5,
+    "std_boost_cap": 0.25
+  },
+  "proxy_weights": {
+    "signal_geometry_index": 1.0,
+    "temporal_drift_index": 1.0,
+    "positive_flux_index": 1.0,
+    "rhythmic_coherence_index": 1.0,
+    "pulse_stability_index": 1.0,
+    "high_frequency_response_index": 1.0,
+    "smooth_homeostasis_index": 1.0,
+    "binary_signature_depth_index": 1.0,
+    "identity_continuity_index": 1.0
+  },
+  "sensory_contract": {
+    "required_fields": [
+      "sensor_type",
+      "units",
+      "cadence_hz",
+      "quality_flags",
+      "missing_data_policy",
+      "values"
+    ],
+    "sensor_units": {
+      "audio": "Pa",
+      "motion": "m_s2",
+      "optical": "lux",
+      "temperature": "celsius",
+      "generic": "normalized"
+    },
+    "unit_normalization": {
+      "Pa": {
+        "offset": 0.0,
+        "scale": 1.0
+      },
+      "m_s2": {
+        "offset": 0.0,
+        "scale": 20.0
+      },
+      "lux": {
+        "offset": 0.0,
+        "scale": 1000.0
+      },
+      "celsius": {
+        "offset": 20.0,
+        "scale": 15.0
+      },
+      "normalized": {
+        "offset": 0.0,
+        "scale": 1.0
+      }
+    },
+    "allowed_missing_data_policy": [
+      "drop",
+      "impute_zero",
+      "forward_fill"
+    ],
+    "quality_flag_penalties": {
+      "saturated": 0.25,
+      "clipped": 0.2,
+      "noisy": 0.15,
+      "dropout": 0.3,
+      "stale": 0.2
+    },
+    "cadence_tolerance_ratio": 0.4,
+    "max_missing_ratio": 0.2
+  },
+  "acceptance_gates": {
+    "max_expected_calibration_error": 0.05,
+    "min_precision": 0.75,
+    "min_recall": 0.75,
+    "min_f1": 0.75,
+    "max_false_alarm_rate": 0.1,
+    "max_temporal_drift_std": 0.1,
+    "max_noise_dropout_robustness_delta": 0.15
+  }
+}
